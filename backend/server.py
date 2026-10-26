@@ -20,12 +20,14 @@ def handle_client(conn, addr):
     connected = True
     while connected:
         msg_length = conn.recv(HEADER).decode(FORMAT)
-        msg_length = int(msg_length)                     # How long the message will be coming
-        msg = conn.recv(msg_length).decode(FORMAT)       # How many bytes are we going to receive in the message
-        if msg == DISCOUNECT_MESSAGE:
-            connected = False
-        
-        print(f"[{addr}] {msg}")                         # Print the message
+        if msg_length:
+            msg_length = int(msg_length)                     # How long the message will be coming
+            msg = conn.recv(msg_length).decode(FORMAT)       # How many bytes are we going to receive in the message
+            if msg == DISCOUNECT_MESSAGE:
+                connected = False
+            
+            print(f"[{addr}] {msg}")                         # Print the message
+            conn.send("MSG received".encode(FORMAT))
     conn.close()
 
 
