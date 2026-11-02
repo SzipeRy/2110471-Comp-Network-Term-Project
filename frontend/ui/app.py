@@ -39,6 +39,7 @@ class App(tk.Tk):
         self.main = MainWindow(self, self)
         self.main.pack(fill="both", expand=True)
         self.title(f"Chat – {username}")
+        self.bind("<Control-w>", lambda _e: self.main.close_current())  # close current tab
 
     def _poll(self):
         try:

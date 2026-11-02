@@ -37,5 +37,9 @@ class ClientInterface:
     def join_group(self, name):  # R10
         raise NotImplementedError
 
+    def leave_group(self, name):
+        """Leave a joined group; you stop receiving its messages. Server then sends on_groups."""
+        raise NotImplementedError
+
     def close(self):
         raise NotImplementedError

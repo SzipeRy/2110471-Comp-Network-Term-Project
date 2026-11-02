@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from .net_interface import private_room_id
 from . import theme as T
@@ -42,6 +42,11 @@ class MainWindow(tk.Frame):
         self.placeholder.pack(expand=True)
         self.tabs = ttk.Notebook(right, style="Chat.TNotebook")
         self.tabs.bind("<<NotebookTabChanged>>", self._tab_changed)
+        self.tabs.bind("<ButtonPress-1>", self._tab_press, add="+")      # ✕ on a tab
+        self.tabs.bind("<ButtonRelease-1>", self._tab_release, add="+")
+        if self.tk.call("tk", "windowingsystem") != "aqua":              # middle-click (not macOS)
+            self.tabs.bind("<ButtonRelease-2>", self._tab_middle_click)
+        self._pressed_tab = None
         self.render_sidebar()
 
     # ---------- sidebar ----------
@@ -93,7 +98,7 @@ class MainWindow(tk.Frame):
         self.render_sidebar()
         for (rtype, rid), room in self.rooms.items():
             if rtype == "group":
-                room.set_group_info(groups.get(rid, []))
+                room.set_group_info(groups.get(rid, []), exists=rid in groups)
         if self.groups_dlg and self.groups_dlg.winfo_exists():
             self.groups_dlg.refresh()
 
@@ -109,8 +114,11 @@ class MainWindow(tk.Frame):
             return next(u for u in rid.split("-") if u != self.app.username)
         return "🤖 Bot" if rtype == "bot" else f"#{rid}"
 
+    def _visible_tabs(self):
+        return [t for t in self.tabs.tabs() if self.tabs.tab(t, "state") != "hidden"]
+
     def _current_key(self):
-        if not self.rooms:
+        if not self._visible_tabs():
             return None
         sel = self.tabs.select()
         for key, room in self.rooms.items():
@@ -118,21 +126,67 @@ class MainWindow(tk.Frame):
                 return key
         return None
 
+    def _show_placeholder_if_empty(self):
+        if self._visible_tabs():
+            self.placeholder.pack_forget()
+            self.tabs.pack(fill="both", expand=True)
+        else:
+            self.tabs.pack_forget()
+            self.placeholder.pack(expand=True)
+
     def _room(self, rtype, rid, select=False):
+        """Get a room, creating it or re-showing a closed tab (history is kept)."""
         key = (rtype, rid)
         if key not in self.rooms:
-            if not self.rooms:
-                self.placeholder.pack_forget()
-                self.tabs.pack(fill="both", expand=True)
             room = ChatRoom(self.tabs, self.app, rtype, rid)
             self.rooms[key] = room
             self.titles[room] = self._title(rtype, rid)
             self.tabs.add(room, text=self.titles[room])
             if rtype == "group":
-                room.set_group_info(self.app.groups.get(rid, []))
+                room.set_group_info(self.app.groups.get(rid, []), exists=rid in self.app.groups)
+        elif self.tabs.tab(self.rooms[key], "state") == "hidden":
+            self.tabs.add(self.rooms[key])  # re-open a closed tab
+        self._show_placeholder_if_empty()
         if select:
             self.tabs.select(self.rooms[key])
         return self.rooms[key]
+
+    # ---------- closing tabs ----------
+    def _tab_press(self, e):
+        if "close" in self.tabs.identify(e.x, e.y):
+            self._pressed_tab = self.tabs.index(f"@{e.x},{e.y}")
+            self.tabs.state(["pressed"])
+            return "break"  # don't switch to the tab
+
+    def _tab_release(self, e):
+        if self._pressed_tab is None:
+            return
+        self.tabs.state(["!pressed"])
+        if "close" in self.tabs.identify(e.x, e.y) and self.tabs.index(f"@{e.x},{e.y}") == self._pressed_tab:
+            self.close_tab(self.tabs.tabs()[self._pressed_tab])
+        self._pressed_tab = None
+
+    def _tab_middle_click(self, e):
+        if self.tabs.identify(e.x, e.y):
+            self.close_tab(self.tabs.tabs()[self.tabs.index(f"@{e.x},{e.y}")])
+
+    def close_tab(self, tab_id):
+        """Hide the tab. Messages stay; it re-opens from the sidebar or when a new message arrives."""
+        room = self.nametowidget(tab_id)
+        room.clear_reply()
+        self.tabs.hide(room)
+        self._show_placeholder_if_empty()
+        self.render_sidebar()
+
+    def close_current(self):
+        if self._current_key():
+            self.close_tab(self.tabs.select())
+
+    # ---------- leaving a group ----------
+    def leave_group(self, name, parent=None):
+        if messagebox.askyesno("Leave group", f"Leave #{name}?\nYou will stop receiving its messages.",
+                               parent=parent or self):
+            self.app.client.leave_group(name)
 
     def _tab_changed(self, _e=None):
         key = self._current_key()

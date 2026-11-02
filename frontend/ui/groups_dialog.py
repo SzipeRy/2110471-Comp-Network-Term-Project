@@ -45,7 +45,8 @@ class GroupsDialog(tk.Toplevel):
             tk.Label(info, text="members: " + (", ".join(members) or "-"), font=T.F_SMALL, fg=T.MUTE,
                      bg=T.CARD, anchor="w", justify="left", wraplength=250).pack(fill="x")
             if joined:
-                T.button(row, "Open", lambda g=g: self.app.main.open_group(g)).pack(side="right")
+                T.button(row, "Leave", lambda g=g: self.app.main.leave_group(g, parent=self)).pack(side="right")
+                T.button(row, "Open", lambda g=g: self.app.main.open_group(g)).pack(side="right", padx=4)
                 tk.Label(row, text="Joined ✓", font=T.F_SMALL, fg=T.ONLINE, bg=T.CARD).pack(side="right", padx=6)
             else:
                 T.button(row, "Join", lambda g=g: self.app.client.join_group(g), primary=True).pack(side="right")

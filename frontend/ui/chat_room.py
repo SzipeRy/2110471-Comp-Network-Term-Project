@@ -22,6 +22,8 @@ class ChatRoom(tk.Frame):
         self.header = tk.Label(head, font=T.F_BOLD, bg=T.BG, fg=T.INK, anchor="w", padx=10, pady=6)
         self.header.pack(side="left", fill="x", expand=True)
         self.join_btn = T.button(head, "Join", lambda: app.client.join_group(room_id), primary=True)
+        self.leave_btn = T.button(head, "Leave group", lambda: app.main.leave_group(room_id))
+        self.joined = None  # group rooms only: None until the first update
         tk.Frame(self, bg=T.LINE, height=1).pack(fill="x")
 
         # chat box (packed at the bottom first so it never gets squeezed out)
@@ -60,15 +62,32 @@ class ChatRoom(tk.Frame):
                          "bot": "Ask the AI chatbot anything"}[room_type])
 
     # ---------- group membership (R10, R11) ----------
-    def set_group_info(self, members):
-        joined = self.app.username in members
-        self.header.config(text=f"#{self.room_id}  ·  members: {', '.join(members) or '-'}")
-        if joined:
-            self.join_btn.pack_forget()
-            self.locked_lbl.pack_forget()
+    def set_group_info(self, members, exists=True):
+        """Active = joined. Inactive = not joined, left, or the group was deleted (read-only)."""
+        joined = exists and self.app.username in members
+        if self.joined is not None and joined != self.joined:
+            self.add_system("You joined the group" if joined else "You left the group")
+        was_member = self.joined is not None and (self.joined or getattr(self, "_left", False))
+        self._left = was_member and not joined
+        self.joined = joined
+
+        self.join_btn.pack_forget()
+        self.leave_btn.pack_forget()
+        self.locked_lbl.pack_forget()
+        if not exists:
+            self.header.config(text=f"#{self.room_id}  ·  group closed", fg=T.MUTE)
+            self.locked_lbl.config(text="This group no longer exists. You can still read old messages.")
         else:
-            self.join_btn.pack(side="right", padx=8)
+            self.header.config(text=f"#{self.room_id}  ·  members: {', '.join(members) or '-'}", fg=T.INK)
+            if joined:
+                self.leave_btn.pack(side="right", padx=8)
+            else:
+                self.join_btn.pack(side="right", padx=8)
+                self.locked_lbl.config(text="You left this group. Join again to send messages."
+                                       if self._left else "Join this group to send messages")
+        if not joined:
             self.locked_lbl.pack(fill="x", pady=(0, 4), before=self.input_row)
+            self.clear_reply()
         for w in (self.entry, self.emoji_btn, self.send_btn):
             T.set_enabled(w, joined)
 

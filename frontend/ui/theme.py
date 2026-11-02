@@ -31,6 +31,34 @@ def setup_style(root):
     s.configure("Chat.TNotebook.Tab", font=F, padding=(12, 4), background=THEM, foreground=MUTE, bordercolor=LINE)
     s.map("Chat.TNotebook.Tab", background=[("selected", CARD)], foreground=[("selected", INK)])
     s.configure("Vertical.TScrollbar", background=THEM, troughcolor=CARD, bordercolor=CARD, arrowcolor=MUTE)
+    _add_tab_close_button(root, s)
+
+
+def _x_image(root, color, bg=None, size=14):
+    """Draw a small ✕ icon pixel by pixel (no image files needed)."""
+    img = tk.PhotoImage(master=root, width=size, height=size)
+    if bg:
+        img.put(bg, to=(1, 1, size - 1, size - 1))
+    for i in range(4, size - 4):
+        for x, y in ((i, i), (i + 1, i), (size - 1 - i, i), (size - 2 - i, i)):
+            img.put(color, to=(x, y))
+    return img
+
+
+def _add_tab_close_button(root, s):
+    """Add a ✕ element to every chat tab. MainWindow handles the click."""
+    root._close_imgs = imgs = (_x_image(root, MUTE), _x_image(root, INK, "#d9dde3"),
+                               _x_image(root, "white", ERR))
+    s.element_create("close", "image", imgs[0],
+                     ("active", "pressed", "!disabled", imgs[2]),
+                     ("active", "!disabled", imgs[1]), border=6, sticky="")
+    s.layout("Chat.TNotebook.Tab", [
+        ("Notebook.tab", {"sticky": "nswe", "children": [
+            ("Notebook.padding", {"side": "top", "sticky": "nswe", "children": [
+                ("Notebook.focus", {"side": "top", "sticky": "nswe", "children": [
+                    ("Notebook.label", {"side": "left", "sticky": ""}),
+                    ("Notebook.close", {"side": "left", "sticky": ""}),
+                ]})]})]})])
 
 
 def button(parent, text, command, primary=False, **kw):

@@ -63,5 +63,13 @@ class MockClient(ClientInterface):
             self.groups[name].append(self.me)
         self._push_lists()
 
+    def leave_group(self, name):
+        members = self.groups.get(name)
+        if members and self.me in members:
+            members.remove(self.me)
+            if not members:  # example rule: an empty group is deleted (Person 1 decides the real rule)
+                del self.groups[name]
+        self._push_lists()
+
     def close(self):
         pass
