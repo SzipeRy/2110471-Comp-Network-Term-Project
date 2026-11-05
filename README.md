@@ -1,6 +1,6 @@
 # 2110471-Comp-Network-Term-Project
 
-Python socket programming project with Flask for the backend and Tkinter for the desktop frontend.
+Python TCP socket chat project with a terminal client and a separate Tkinter desktop frontend.
 
 ## Prerequisites
 
@@ -85,7 +85,10 @@ The Tkinter command should open a small demonstration window. Close it when fini
 |-- backend/
 |   `-- server.py
 |-- frontend/
-|   `-- user.py
+|   |-- client.py        # Working terminal chat client
+|   `-- ui/              # Tkinter UI (currently uses a mock client)
+|-- tests/
+|   `-- test_chat.py     # TCP broadcast integration tests
 |-- .venv/             # Local environment; excluded from Git
 |-- .gitignore
 |-- requirements.txt   # Shared Python dependencies
@@ -93,7 +96,37 @@ The Tkinter command should open a small demonstration window. Close it when fini
 `-- README.md
 ```
 
-`backend/server.py` and `frontend/user.py` currently contain placeholder functions. This setup prepares the environment; the server and GUI still need to be implemented. Flask handles HTTP, while raw TCP socket communication must be implemented separately if required by the project.
+## Run the terminal chat
+
+Start the server in one terminal:
+
+```powershell
+python backend/server.py
+```
+
+Open two or more additional terminals and run this command in each:
+
+```powershell
+python frontend/client.py
+```
+
+Every connected client receives every message, including its own message echoed by the server. Messages show the sender's IP address and port. Type `!DISCONNECT` or press Ctrl+C to leave.
+
+For clients on another computer on the same network, replace the example address with the server computer's LAN IPv4 address:
+
+```powershell
+python frontend/client.py --host 192.168.1.100
+```
+
+The server listens on all IPv4 interfaces by default. If Windows prompts, allow Python through the firewall on your private network. Both commands accept `--port` (default `5050`); both sides must use the same port.
+
+The protocol uses a 64-byte, space-padded decimal length followed by UTF-8 message bytes in both directions. Messages are limited to 1 MiB before the server adds the sender label. This is a shared chat room; private and group routing are future work. The Tkinter UI still uses its mock client and is not connected to this terminal chat implementation.
+
+Run the loopback integration tests:
+
+```powershell
+python -m unittest discover -s tests -v
+```
 
 ## Working as a team
 
