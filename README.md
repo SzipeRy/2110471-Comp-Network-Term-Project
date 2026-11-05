@@ -93,6 +93,7 @@ The Tkinter command should open a small demonstration window. Close it when fini
 |-- .gitignore
 |-- requirements.txt   # Shared Python dependencies
 |-- project_plan.md
+|-- MESSAGE_PROTOCOL.md # JSON fields and TCP framing
 `-- README.md
 ```
 
@@ -110,7 +111,7 @@ Open two or more additional terminals and run this command in each:
 python frontend/client.py
 ```
 
-Every connected client receives every message, including its own message echoed by the server. Messages show the sender's IP address and port. Type `!DISCONNECT` or press Ctrl+C to leave.
+Every connected client receives every message, including its own message echoed by the server. Messages show the lobby room, sender's IP address and port, and server-generated message ID. Reply using `/reply <msg_id> <text>`. Type `!DISCONNECT` or press Ctrl+C to leave.
 
 For clients on another computer on the same network, replace the example address with the server computer's LAN IPv4 address:
 
@@ -120,7 +121,9 @@ python frontend/client.py --host 192.168.1.100
 
 The server listens on all IPv4 interfaces by default. If Windows prompts, allow Python through the firewall on your private network. Both commands accept `--port` (default `5050`); both sides must use the same port.
 
-The protocol uses a 64-byte, space-padded decimal length followed by UTF-8 message bytes in both directions. Messages are limited to 1 MiB before the server adds the sender label. This is a shared chat room; private and group routing are future work. The Tkinter UI still uses its mock client and is not connected to this terminal chat implementation.
+The protocol uses a 64-byte, space-padded decimal length followed by a UTF-8 JSON object in both directions. The entire JSON body is limited to 1 MiB. Chat messages contain `type`, `room`, `msg_id`, `sender_id`, `text`, `reply_to`, and `timestamp`; the server assigns identity, message IDs, and UTC timestamps. See [MESSAGE_PROTOCOL.md](MESSAGE_PROTOCOL.md) for examples, validation rules, and error responses. Restart both server and clients after updating, since the earlier plain-text protocol is incompatible.
+
+This is a shared `lobby` chat room; private and group routing are future work. The Tkinter UI still uses its mock client and is not connected to this terminal chat implementation.
 
 Run the loopback integration tests:
 

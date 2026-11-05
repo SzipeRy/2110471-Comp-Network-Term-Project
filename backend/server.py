@@ -1,12 +1,15 @@
 ﻿import argparse
+from datetime import datetime, timezone
+import json
 import socket
 import threading
+import uuid
 
 HEADER = 64
 PORT = 5050
 SERVER = "0.0.0.0"
 FORMAT = "utf-8"
-DISCONNECT_MESSAGE = "!DISCONNECT"
+DEFAULT_ROOM = "lobby"
 MAX_MESSAGE_BYTES = 1024 * 1024
 
 # Each connection has a send lock so simultaneous broadcasts cannot mix frames.
@@ -26,9 +29,42 @@ def recv_exact(conn, length):
 
 def receive_message(conn):
     length = int(recv_exact(conn, HEADER).decode(FORMAT))
-    if not 0 <= length <= MAX_MESSAGE_BYTES:
+    if not 0 < length <= MAX_MESSAGE_BYTES:
         raise ValueError("Invalid message length")
-    return recv_exact(conn, length).decode(FORMAT)
+    message = json.loads(recv_exact(conn, length).decode(FORMAT))
+    if not isinstance(message, dict):
+        raise ValueError("Message must be a JSON object")
+    return message
+
+
+def encode_message(message):
+    payload = json.dumps(message, ensure_ascii=False, allow_nan=False).encode(FORMAT)
+    if len(payload) > MAX_MESSAGE_BYTES:
+        raise ValueError("JSON message exceeds the 1 MiB limit")
+    return str(len(payload)).encode(FORMAT).ljust(HEADER, b" ") + payload
+
+
+def server_message(kind, sender_id, text, room=DEFAULT_ROOM, reply_to=None):
+    return {
+        "type": kind,
+        "room": room,
+        "msg_id": uuid.uuid4().hex,
+        "sender_id": sender_id,
+        "text": text,
+        "reply_to": reply_to,
+        "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+    }
+
+
+def send_error(conn, code, text):
+    message = server_message("error", "server", text)
+    message["code"] = code
+    frame = encode_message(message)
+    with clients_lock:
+        send_lock = clients.get(conn)
+    if send_lock is not None:
+        with send_lock:
+            conn.sendall(frame)
 
 
 def remove_client(conn):
@@ -43,8 +79,7 @@ def remove_client(conn):
 
 
 def broadcast(message):
-    payload = message.encode(FORMAT)
-    frame = str(len(payload)).encode(FORMAT).ljust(HEADER, b" ") + payload
+    frame = encode_message(message)
     with clients_lock:
         recipients = list(clients.items())
     for conn, send_lock in recipients:
@@ -60,12 +95,37 @@ def handle_client(conn, addr):
     try:
         while True:
             message = receive_message(conn)
-            if message == DISCONNECT_MESSAGE:
+            if message.get("type") == "disconnect":
                 break
-            displayed = f"[{addr[0]}:{addr[1]}] {message}"
-            print(displayed, flush=True)
+            if message.get("type") != "chat_message":
+                send_error(conn, "unsupported_type", "Expected chat_message or disconnect")
+                continue
+            room = message.get("room", DEFAULT_ROOM)
+            if room != DEFAULT_ROOM:
+                send_error(conn, "unsupported_room", "Only the lobby room is available")
+                continue
+            text = message.get("text")
+            reply_to = message.get("reply_to")
+            if not isinstance(text, str) or not (
+                reply_to is None
+                or isinstance(reply_to, str) and 0 < len(reply_to) <= 128
+            ):
+                send_error(
+                    conn, "invalid_message",
+                    "text must be a string; reply_to must be null or a message ID (1-128 characters)",
+                )
+                continue
+            # Identity and metadata come from the server, not client claims.
+            outgoing = server_message(
+                "chat_message", f"{addr[0]}:{addr[1]}", text, room, reply_to
+            )
             # Include the sender so every client displays the server's echo.
-            broadcast(displayed)
+            try:
+                broadcast(outgoing)
+            except ValueError as exc:
+                send_error(conn, "message_too_large", str(exc))
+                continue
+            print(f"[{outgoing['sender_id']}] {text}", flush=True)
     except (EOFError, OSError, ValueError) as exc:
         print(f"[CONNECTION CLOSED] {addr}: {exc}", flush=True)
     finally:
