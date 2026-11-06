@@ -236,10 +236,48 @@ class BroadcastChatTests(unittest.TestCase):
         client.send(pending, "Cannot chat yet")
         error = client.receive_message(pending)
         self.assertEqual(error["code"], "registration_required")
+        client.send(pending, client.MEMBERLIST_MESSAGE)
+        self.assertEqual(client.receive_message(pending)["code"], "registration_required")
         self.assert_broadcast(alice, [alice], "Only registered clients")
         self.assertEqual(select.select([pending], [], [], 0.1)[0], [])
         self.names[pending] = client.register(pending, "Bob")
         self.assert_broadcast(pending, [alice, pending], "Now joined")
+
+    def test_member_list_includes_self_and_unicode_but_excludes_unregistered_clients(self):
+        alice = self.connect("Alice")
+        bob = self.connect("bob")
+        thai = self.connect("\u0e01\u0e32\u0e19\u0e15\u0e4c\U0001f600")
+        pending = self.connect(registered=False)
+        client.send(alice, client.MEMBERLIST_MESSAGE)
+        response = client.receive_message(alice)
+        self.assertEqual(response["type"], "member_list")
+        self.assertEqual(response["sender_id"], "server")
+        self.assertEqual(response["members"], sorted(self.names.values(), key=str.casefold))
+        self.assertEqual(len(response["members"]), 3)
+        # Neither the request nor its response is broadcast as a chat message.
+        self.assertEqual(select.select([bob, thai, pending], [], [], 0.1)[0], [])
+        self.assert_broadcast(alice, [alice, bob, thai], "Chat still works")
+
+    def test_member_list_refreshes_after_joins_and_disconnects(self):
+        alice = self.connect("Alice")
+        client.send(alice, client.MEMBERLIST_MESSAGE)
+        self.assertEqual(client.receive_message(alice)["members"], ["Alice"])
+        bob, carol = self.connect("Bob"), self.connect("Carol")
+        client.send(alice, {"type": "member_list"})
+        self.assertEqual(client.receive_message(alice)["members"], ["Alice", "Bob", "Carol"])
+        client.send(bob, client.DISCONNECT_MESSAGE)
+        self.assertEqual(bob.recv(1), b"")
+        wait_for_line(self.logs, "[DISCONNECTED]")
+        carol.close()
+        wait_for_line(self.logs, "[DISCONNECTED]")
+        client.send(alice, client.MEMBERLIST_MESSAGE)
+        self.assertEqual(client.receive_message(alice)["members"], ["Alice"])
+
+    def test_member_list_command_text_can_still_be_sent_as_explicit_chat(self):
+        alice, bob = self.connect("Alice"), self.connect("Bob")
+        client.send(alice, client.create_message("!MEMBERLIST"))
+        for conn in [alice, bob]:
+            self.assertEqual(client.receive_message(conn)["text"], "!MEMBERLIST")
 
     def test_username_length_and_unicode_are_preserved_for_every_client(self):
         names = ["a" * 20, "\u0e01" * 20, "\U0001f600" * 20]
@@ -316,6 +354,12 @@ class BroadcastChatTests(unittest.TestCase):
         ).start()
         wait_for_line(output, "[JOINED] lobby as TerminalUser")
         wait_for_line(self.logs, "[ACTIVE CONNECTIONS]")
+        terminal.stdin.write(client.MEMBERLIST_MESSAGE + "\n")
+        terminal.stdin.flush()
+        wait_for_line(output, "[MEMBERS] Connected members (2):")
+        wait_for_line(output, " - TerminalUser")
+        wait_for_line(output, f" - {self.names[alice]}")
+        self.assertEqual(select.select([alice], [], [], 0.1)[0], [])
         client.send(alice, "Incoming while idle")
         wait_for_line(output, "] Incoming while idle")
         self.assertEqual(client.receive_message(alice)["text"], "Incoming while idle")

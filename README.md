@@ -121,6 +121,8 @@ python frontend/client.py --username Alice
 
 Every registered client receives every lobby message, including its own message echoed by the server. Messages show the lobby room, sender's registered username, and server-generated message ID. The server sets the sender name, so all clients see the same identity. Reply using `/reply <msg_id> <text>`. Type `!DISCONNECT` or press Ctrl+C to leave. Reconnect to choose a different username; disconnected names become available again.
 
+Type `!MEMBERLIST` to see the currently connected, registered usernames, including your own. The server sends the sorted list only to you. Run the command again to refresh it after someone joins or disconnects. Connections that have not registered a username are excluded.
+
 For clients on another computer on the same network, replace the example address with the server computer's LAN IPv4 address:
 
 ```powershell

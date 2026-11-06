@@ -8,6 +8,7 @@ PORT = 5050
 SERVER = "127.0.0.1"
 FORMAT = "utf-8"
 DISCONNECT_MESSAGE = "!DISCONNECT"
+MEMBERLIST_MESSAGE = "!MEMBERLIST"
 DEFAULT_ROOM = "lobby"
 MAX_MESSAGE_BYTES = 1024 * 1024
 
@@ -48,10 +49,12 @@ def create_message(text, room=DEFAULT_ROOM, reply_to=None):
 def send(conn, message):
     # Keep terminal input convenient; the wire always carries a JSON object.
     if isinstance(message, str):
-        message = (
-            {"type": "disconnect"}
-            if message == DISCONNECT_MESSAGE else create_message(message)
-        )
+        if message == DISCONNECT_MESSAGE:
+            message = {"type": "disconnect"}
+        elif message == MEMBERLIST_MESSAGE:
+            message = {"type": "member_list"}
+        else:
+            message = create_message(message)
     if not isinstance(message, dict):
         raise ValueError("Message must be a JSON object or text")
     payload = json.dumps(message, ensure_ascii=False, allow_nan=False).encode(FORMAT)
@@ -104,6 +107,13 @@ def receive_messages(conn, disconnected):
                 )
             elif message.get("type") == "error":
                 print(f"\n[ERROR] {message['code']}: {message['text']}", flush=True)
+            elif message.get("type") == "member_list":
+                members = message["members"]
+                print(
+                    f"\n[MEMBERS] Connected members ({len(members)}):\n"
+                    + "\n".join(f" - {name}" for name in members),
+                    flush=True,
+                )
             else:
                 raise ValueError("Unsupported server message type")
     except (EOFError, OSError, ValueError, KeyError):
@@ -132,6 +142,7 @@ def main():
                 return
             print(f"[JOINED] {DEFAULT_ROOM} as {username}", flush=True)
             print("Reply with /reply <msg_id> <text>.")
+            print(f"Type {MEMBERLIST_MESSAGE} to see connected members.")
             receiver = threading.Thread(
                 target=receive_messages, args=(client, disconnected), daemon=True
             )

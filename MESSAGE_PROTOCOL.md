@@ -111,6 +111,33 @@ send(conn, create_message("Hello back!", reply_to=original_msg_id))
 
 The server does not store message history or verify that a referenced ID exists. `reply_to` currently carries the relationship; quoting the original content or looking up older messages requires future history/UI support.
 
+## Connected member list
+
+After registering, type `!MEMBERLIST` in the terminal client. It sends:
+
+```json
+{"type": "member_list"}
+```
+
+The server responds only to the requester with the usual envelope and one additional field, `members`, containing the currently registered usernames:
+
+```json
+{
+  "type": "member_list",
+  "room": "lobby",
+  "msg_id": "82d19a8fe94745cb9317c05d9db7f01a",
+  "sender_id": "server",
+  "text": "Connected members",
+  "reply_to": null,
+  "timestamp": "2026-11-07T07:30:00.123+00:00",
+  "members": ["Alice", "Bob"]
+}
+```
+
+The list includes the requester, preserves accepted username spelling, and is sorted by `casefold()`. It is a server-wide snapshot taken under the connection registry lock. Unregistered connections are excluded; a request before registration returns `registration_required`. Run the command again to see subsequent joins or disconnects. The terminal displays the list and its count. Neither the request nor its response is broadcast to other clients.
+
+Only the exact terminal input `!MEMBERLIST` is treated as a command. An explicit `chat_message` whose `text` equals `"!MEMBERLIST"` remains ordinary chat text.
+
 ## Disconnect
 
 Typing `!DISCONNECT`, pressing Ctrl+C, or reaching terminal input EOF sends this control object before the client closes:
@@ -142,8 +169,8 @@ For a complete JSON object with an unsupported operation or invalid chat fields,
 
 | Code | Meaning |
 |---|---|
-| `unsupported_type` | The request type is missing or is not `register`, `chat_message`, or `disconnect`. |
-| `registration_required` | The connection must register a username before sending chat messages. |
+| `unsupported_type` | The request type is missing or is not `register`, `chat_message`, `member_list`, or `disconnect`. |
+| `registration_required` | The connection must register a username before sending chat messages or requesting the member list. |
 | `invalid_username` | The name is not text, is empty, exceeds 20 code points after normalization, contains non-printable characters, or is reserved. |
 | `username_taken` | A connected client already owns the name (case-insensitive). |
 | `already_registered` | The connection already registered a name; reconnect to choose another. |
@@ -155,6 +182,6 @@ Malformed headers, invalid lengths, invalid UTF-8/JSON, non-object JSON, truncat
 
 ## Current scope and UI mapping
 
-The `room` field prepares the protocol for group routing. Group creation, joining specific groups, membership lists, private routing, and persistent history are not implemented yet. Requests for other rooms are rejected rather than broadcast to the lobby.
+The server-wide connected member list is available through `!MEMBERLIST`. The `room` field prepares the protocol for group routing. Group creation, joining specific groups, per-group membership lists, private routing, and persistent history are not implemented yet. Requests for other rooms are rejected rather than broadcast to the lobby.
 
 The separate Tkinter UI still uses its mock client. Its existing contract uses `room_type`, `room_id`, `message_id`, and `sender`; this wire protocol uses the requested `room`, `msg_id`, and `sender_id`. Future real-client integration must map these fields (for example, `room` → `room_id`, `msg_id` → `message_id`, and `sender_id` → `sender`) and supply the UI's room type.

@@ -59,15 +59,27 @@ def server_message(kind, sender_id, text, room=DEFAULT_ROOM, reply_to=None):
     }
 
 
-def send_error(conn, code, text):
-    message = server_message("error", "server", text)
-    message["code"] = code
+def send_to(conn, message):
     frame = encode_message(message)
     with clients_lock:
         send_lock = clients.get(conn)
     if send_lock is not None:
         with send_lock:
             conn.sendall(frame)
+
+
+def send_error(conn, code, text):
+    message = server_message("error", "server", text)
+    message["code"] = code
+    send_to(conn, message)
+
+
+def send_member_list(conn):
+    with clients_lock:
+        members = sorted(usernames.values(), key=str.casefold)
+    message = server_message("member_list", "server", "Connected members")
+    message["members"] = members
+    send_to(conn, message)
 
 
 def register_client(conn, requested_name):
@@ -140,13 +152,16 @@ def handle_client(conn, addr):
             if message.get("type") == "register":
                 register_client(conn, message.get("username"))
                 continue
-            if message.get("type") != "chat_message":
-                send_error(conn, "unsupported_type", "Expected register, chat_message, or disconnect")
+            if message.get("type") not in ("chat_message", "member_list"):
+                send_error(conn, "unsupported_type", "Expected register, chat_message, member_list, or disconnect")
                 continue
             with clients_lock:
                 username = usernames.get(conn)
             if username is None:
                 send_error(conn, "registration_required", "Choose a username before joining the chat")
+                continue
+            if message.get("type") == "member_list":
+                send_member_list(conn)
                 continue
             room = message.get("room", DEFAULT_ROOM)
             if room != DEFAULT_ROOM:
