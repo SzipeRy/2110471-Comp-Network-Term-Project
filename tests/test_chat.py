@@ -5,12 +5,14 @@ import json
 import os
 from pathlib import Path
 import queue
+import select
 import socket
 import subprocess
 import sys
 import threading
 import time
 import unittest
+from unittest.mock import Mock, patch
 import uuid
 
 from frontend import client
@@ -33,6 +35,19 @@ def wait_for_line(lines, text, timeout=5):
     raise AssertionError(f"Did not receive output containing {text!r}")
 
 
+class RegistrationCompatibilityTests(unittest.TestCase):
+    def test_older_server_reports_restart_instead_of_retrying_username(self):
+        # This is the actual response returned by the pre-registration server.
+        response = {
+            "type": "error", "code": "unsupported_type",
+            "text": "Expected chat_message or disconnect",
+        }
+        with patch.object(client, "receive_message", return_value=response), patch("builtins.input") as prompt:
+            with self.assertRaisesRegex(ConnectionError, "restart.*python backend/server.py"):
+                client.choose_username(Mock(), "Alice")
+        prompt.assert_not_called()
+
+
 class BroadcastChatTests(unittest.TestCase):
     def setUp(self):
         self.env = dict(os.environ, PYTHONIOENCODING="utf-8")
@@ -48,6 +63,7 @@ class BroadcastChatTests(unittest.TestCase):
         ).start()
         listening = wait_for_line(self.logs, "[LISTENING]")
         self.address = ("127.0.0.1", int(listening.rsplit(":", 1)[1]))
+        self.names = {}
 
     @staticmethod
     def stop_process(process):
@@ -59,10 +75,12 @@ class BroadcastChatTests(unittest.TestCase):
         if process.stdout:
             process.stdout.close()
 
-    def connect(self):
+    def connect(self, username=None, registered=True):
         conn = socket.create_connection(self.address, timeout=5)
         self.addCleanup(conn.close)
         wait_for_line(self.logs, "[ACTIVE CONNECTIONS]")
+        if registered:
+            self.names[conn] = client.register(conn, username or f"User{len(self.names) + 1}")
         return conn
 
     def assert_broadcast(self, sender, recipients, text):
@@ -75,7 +93,7 @@ class BroadcastChatTests(unittest.TestCase):
             })
             self.assertEqual(message["type"], "chat_message")
             self.assertEqual(message["room"], "lobby")
-            self.assertEqual(message["sender_id"], f"127.0.0.1:{sender.getsockname()[1]}")
+            self.assertEqual(message["sender_id"], self.names[sender])
             self.assertEqual(message["text"], text)
             self.assertIsNone(message["reply_to"])
             self.assertEqual(uuid.UUID(message["msg_id"]).version, 4)
@@ -83,7 +101,7 @@ class BroadcastChatTests(unittest.TestCase):
         return received[0]
 
     def test_every_client_receives_own_and_other_messages(self):
-        alice, bob, carol = self.connect(), self.connect(), self.connect()
+        alice, bob, carol = self.connect("Alice"), self.connect("Bob"), self.connect("Carol")
         recipients = [alice, bob, carol]
         for sender, text in [(alice, "Hello"), (bob, "Hi Alice"), (carol, "")]:
             self.assert_broadcast(sender, recipients, text)
@@ -104,7 +122,7 @@ class BroadcastChatTests(unittest.TestCase):
     def test_simultaneous_senders_keep_frames_intact(self):
         connections = [self.connect() for _ in range(3)]
         expected = {
-            (f"127.0.0.1:{conn.getsockname()[1]}", f"{index}:{number}")
+            (self.names[conn], f"{index}:{number}")
             for index, conn in enumerate(connections) for number in range(10)
         }
 
@@ -162,14 +180,14 @@ class BroadcastChatTests(unittest.TestCase):
         alice, bob = self.connect(), self.connect()
         original = self.assert_broadcast(alice, [alice, bob], "Original")
         reply = client.create_message("Reply", reply_to=original["msg_id"])
-        reply.update(msg_id="forged-id", sender_id="Alice", timestamp="fake-time")
+        reply.update(msg_id="forged-id", sender_id=self.names[alice], timestamp="fake-time")
         client.send(bob, reply)
         received = [client.receive_message(conn) for conn in [alice, bob]]
         self.assertEqual(received[0], received[1])
         message = received[0]
         self.assertEqual(message["reply_to"], original["msg_id"])
         self.assertEqual(message["text"], "Reply")
-        self.assertEqual(message["sender_id"], f"127.0.0.1:{bob.getsockname()[1]}")
+        self.assertEqual(message["sender_id"], self.names[bob])
         self.assertEqual(uuid.UUID(message["msg_id"]).version, 4)
         self.assertNotEqual(message["msg_id"], original["msg_id"])
         self.assertEqual(datetime.fromisoformat(message["timestamp"]).utcoffset(), timedelta(0))
@@ -212,8 +230,113 @@ class BroadcastChatTests(unittest.TestCase):
             self.assertEqual(client.receive_message(conn)["text"], "!DISCONNECT")
         self.assert_broadcast(alice, [alice, bob], "Still here")
 
+    def test_registration_required_before_sending_or_receiving_chat(self):
+        alice = self.connect("Alice")
+        pending = self.connect(registered=False)
+        client.send(pending, "Cannot chat yet")
+        error = client.receive_message(pending)
+        self.assertEqual(error["code"], "registration_required")
+        self.assert_broadcast(alice, [alice], "Only registered clients")
+        self.assertEqual(select.select([pending], [], [], 0.1)[0], [])
+        self.names[pending] = client.register(pending, "Bob")
+        self.assert_broadcast(pending, [alice, pending], "Now joined")
+
+    def test_username_length_and_unicode_are_preserved_for_every_client(self):
+        names = ["a" * 20, "\u0e01" * 20, "\U0001f600" * 20]
+        connections = [self.connect(name) for name in names]
+        for conn in connections:
+            self.assert_broadcast(conn, connections, "My name has 20 characters")
+
+    def test_invalid_username_can_be_corrected_on_same_connection(self):
+        pending = self.connect(registered=False)
+        for name in ["", "   ", "a" * 21, "\u0e01" * 21, "Bad\nName", "Bad\tName", "server", "SERVER", None, 123, []]:
+            client.send(pending, {"type": "register", "username": name})
+            error = client.receive_message(pending)
+            self.assertEqual(error["type"], "error")
+            self.assertEqual(error["code"], "invalid_username")
+        self.names[pending] = client.register(pending, "  Alice  ")
+        self.assertEqual(self.names[pending], "Alice")
+        self.assert_broadcast(pending, [pending], "Corrected")
+
+    def test_username_is_unique_and_cannot_be_changed_by_chat_or_reregistration(self):
+        alice = self.connect("Alice")
+        pending = self.connect(registered=False)
+        client.send(pending, {"type": "register", "username": "alice"})
+        self.assertEqual(client.receive_message(pending)["code"], "username_taken")
+        self.names[pending] = client.register(pending, "Bob")
+        client.send(alice, {"type": "register", "username": "Carol"})
+        self.assertEqual(client.receive_message(alice)["code"], "already_registered")
+        self.assert_broadcast(alice, [alice, pending], "Still Alice")
+
+    def test_simultaneous_registration_cannot_claim_the_same_name(self):
+        first, second = self.connect(registered=False), self.connect(registered=False)
+        barrier = threading.Barrier(2)
+
+        def request(conn, name):
+            barrier.wait(timeout=5)
+            client.send(conn, {"type": "register", "username": name})
+
+        threads = [
+            threading.Thread(target=request, args=(first, "Alice")),
+            threading.Thread(target=request, args=(second, "alice")),
+        ]
+        for thread in threads:
+            thread.start()
+        responses = [client.receive_message(conn) for conn in [first, second]]
+        for thread in threads:
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(sorted(r["type"] for r in responses), ["error", "registered"])
+        error = next(r for r in responses if r["type"] == "error")
+        self.assertEqual(error["code"], "username_taken")
+
+    def test_username_is_released_after_graceful_and_abrupt_disconnect(self):
+        for abrupt in [False, True]:
+            alice = self.connect("Alice")
+            if abrupt:
+                alice.close()
+            else:
+                client.send(alice, client.DISCONNECT_MESSAGE)
+                self.assertEqual(alice.recv(1), b"")
+            wait_for_line(self.logs, "[DISCONNECTED]")
+        replacement = self.connect("Alice")
+        self.assert_broadcast(replacement, [replacement], "Reconnected")
+
     def test_terminal_client_receives_without_typing_and_echoes_own_message(self):
         alice = self.connect()
+        terminal = subprocess.Popen(
+            [sys.executable, "-u", "frontend/client.py", "--port", str(self.address[1]), "--username", "TerminalUser"],
+            cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, encoding="utf-8", env=self.env,
+        )
+        self.addCleanup(self.stop_process, terminal)
+        output = queue.Queue()
+        threading.Thread(
+            target=collect_lines, args=(terminal.stdout, output), daemon=True
+        ).start()
+        wait_for_line(output, "[JOINED] lobby as TerminalUser")
+        wait_for_line(self.logs, "[ACTIVE CONNECTIONS]")
+        client.send(alice, "Incoming while idle")
+        wait_for_line(output, "] Incoming while idle")
+        self.assertEqual(client.receive_message(alice)["text"], "Incoming while idle")
+        terminal.stdin.write("From the terminal\n")
+        terminal.stdin.flush()
+        wait_for_line(output, "] From the terminal")
+        own = client.receive_message(alice)
+        self.assertEqual(own["text"], "From the terminal")
+        self.assertEqual(own["sender_id"], "TerminalUser")
+        terminal.stdin.write(f"/reply {own['msg_id']} A reply\n")
+        terminal.stdin.flush()
+        wait_for_line(output, f"reply to: {own['msg_id']}")
+        reply = client.receive_message(alice)
+        self.assertEqual(reply["reply_to"], own["msg_id"])
+        self.assertEqual(reply["text"], "A reply")
+        terminal.stdin.write(client.DISCONNECT_MESSAGE + "\n")
+        terminal.stdin.flush()
+        self.assertEqual(terminal.wait(timeout=5), 0)
+
+    def test_terminal_prompts_again_for_invalid_or_taken_username(self):
+        alice = self.connect("Alice")
         terminal = subprocess.Popen(
             [sys.executable, "-u", "frontend/client.py", "--port", str(self.address[1])],
             cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -225,21 +348,20 @@ class BroadcastChatTests(unittest.TestCase):
             target=collect_lines, args=(terminal.stdout, output), daemon=True
         ).start()
         wait_for_line(output, "[CONNECTED]")
-        wait_for_line(self.logs, "[ACTIVE CONNECTIONS]")
-        client.send(alice, "Incoming while idle")
-        wait_for_line(output, "] Incoming while idle")
-        self.assertEqual(client.receive_message(alice)["text"], "Incoming while idle")
-        terminal.stdin.write("From the terminal\n")
+        terminal.stdin.write("x" * 21 + "\n")
         terminal.stdin.flush()
-        wait_for_line(output, "] From the terminal")
-        own = client.receive_message(alice)
-        self.assertEqual(own["text"], "From the terminal")
-        terminal.stdin.write(f"/reply {own['msg_id']} A reply\n")
+        wait_for_line(output, "[ERROR] Username must contain 1-20")
+        terminal.stdin.write("alice\n")
         terminal.stdin.flush()
-        wait_for_line(output, f"reply to: {own['msg_id']}")
-        reply = client.receive_message(alice)
-        self.assertEqual(reply["reply_to"], own["msg_id"])
-        self.assertEqual(reply["text"], "A reply")
+        wait_for_line(output, "[ERROR] That username is already in use")
+        terminal.stdin.write("  Bob  \n")
+        terminal.stdin.flush()
+        wait_for_line(output, "[JOINED] lobby as Bob")
+        terminal.stdin.write("Hello from Bob\n")
+        terminal.stdin.flush()
+        wait_for_line(output, "[Bob] Hello from Bob")
+        message = client.receive_message(alice)
+        self.assertEqual(message["sender_id"], "Bob")
         terminal.stdin.write(client.DISCONNECT_MESSAGE + "\n")
         terminal.stdin.flush()
         self.assertEqual(terminal.wait(timeout=5), 0)

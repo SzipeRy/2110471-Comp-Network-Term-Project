@@ -111,7 +111,15 @@ Open two or more additional terminals and run this command in each:
 python frontend/client.py
 ```
 
-Every connected client receives every message, including its own message echoed by the server. Messages show the lobby room, sender's IP address and port, and server-generated message ID. Reply using `/reply <msg_id> <text>`. Type `!DISCONNECT` or press Ctrl+C to leave.
+Each client is prompted to choose a username before entering the lobby. Names must contain 1-20 printable characters after surrounding whitespace is trimmed and Unicode is normalized. Names must be unique among connected clients (case-insensitive); invalid or taken names prompt you to choose again. The name `server` is reserved. Thai text and emoji are supported; the length is measured in Unicode code points rather than UTF-8 bytes.
+
+You can also supply a name directly:
+
+```powershell
+python frontend/client.py --username Alice
+```
+
+Every registered client receives every lobby message, including its own message echoed by the server. Messages show the lobby room, sender's registered username, and server-generated message ID. The server sets the sender name, so all clients see the same identity. Reply using `/reply <msg_id> <text>`. Type `!DISCONNECT` or press Ctrl+C to leave. Reconnect to choose a different username; disconnected names become available again.
 
 For clients on another computer on the same network, replace the example address with the server computer's LAN IPv4 address:
 

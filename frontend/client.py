@@ -61,6 +61,36 @@ def send(conn, message):
     conn.sendall(header + payload)
 
 
+def register(conn, username):
+    """Return the server-confirmed name, or raise ValueError for a rejected name."""
+    send(conn, {"type": "register", "username": username})
+    response = receive_message(conn)
+    if response.get("type") == "error":
+        if response.get("code") in {"invalid_username", "username_taken"}:
+            raise ValueError(response["text"])
+        if response.get("code") == "unsupported_type":
+            raise ConnectionError(
+                "The running server does not support username registration. "
+                "Stop it with Ctrl+C, restart it with 'python backend/server.py', "
+                "then reconnect. If it runs on another device, update and restart it there."
+            )
+        raise ConnectionError(f"Registration failed: {response.get('text', 'Unknown server error')}")
+    if response.get("type") != "registered" or not isinstance(response.get("username"), str):
+        raise ConnectionError("Unexpected registration response")
+    return response["username"]
+
+
+def choose_username(conn, username=None):
+    while True:
+        if username is None:
+            username = input("Username (1-20 characters): ")
+        try:
+            return register(conn, username)
+        except ValueError as exc:
+            print(f"[ERROR] {exc}", flush=True)
+            username = None
+
+
 def receive_messages(conn, disconnected):
     try:
         while True:
@@ -87,6 +117,7 @@ def main():
     parser = argparse.ArgumentParser(description="TCP broadcast chat client")
     parser.add_argument("--host", default=SERVER, help="Server IP address")
     parser.add_argument("--port", type=int, default=PORT)
+    parser.add_argument("--username", help="Chat name (1-20 characters); otherwise prompted")
     args = parser.parse_args()
     disconnected = threading.Event()
 
@@ -94,6 +125,12 @@ def main():
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
             client.connect((args.host, args.port))
             print(f"[CONNECTED] {args.host}:{args.port}. Type {DISCONNECT_MESSAGE} to exit.")
+            try:
+                username = choose_username(client, args.username)
+            except (EOFError, KeyboardInterrupt):
+                send(client, DISCONNECT_MESSAGE)
+                return
+            print(f"[JOINED] {DEFAULT_ROOM} as {username}", flush=True)
             print("Reply with /reply <msg_id> <text>.")
             receiver = threading.Thread(
                 target=receive_messages, args=(client, disconnected), daemon=True
