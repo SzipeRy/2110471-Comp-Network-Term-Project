@@ -9,6 +9,7 @@ SERVER = "127.0.0.1"
 FORMAT = "utf-8"
 DISCONNECT_MESSAGE = "!DISCONNECT"
 MEMBERLIST_MESSAGE = "!MEMBERLIST"
+GROUPLIST_MESSAGE = "!GROUPLIST"
 DEFAULT_ROOM = "lobby"
 MAX_MESSAGE_BYTES = 1024 * 1024
 
@@ -33,11 +34,12 @@ def receive_message(conn):
     return message
 
 
-def create_message(text, room=DEFAULT_ROOM, reply_to=None):
+def create_message(text, room=DEFAULT_ROOM, reply_to=None, room_type="group"):
     """Server-owned fields are filled in when this message is broadcast."""
     return {
         "type": "chat_message",
         "room": room,
+        "room_type": room_type,
         "msg_id": None,
         "sender_id": None,
         "text": text,
@@ -53,6 +55,8 @@ def send(conn, message):
             message = {"type": "disconnect"}
         elif message == MEMBERLIST_MESSAGE:
             message = {"type": "member_list"}
+        elif message == GROUPLIST_MESSAGE:
+            message = {"type": "group_list"}
         else:
             message = create_message(message)
     if not isinstance(message, dict):
@@ -94,14 +98,69 @@ def choose_username(conn, username=None):
             username = None
 
 
+HELP = """Choose a destination before sending:
+ /private <username>  Enter a private chat with a connected user
+ /create <group>      Create, join, and enter a new group
+ /join <group>        Join and enter an existing group
+ /group <group>       Enter a group you already belong to
+ /groups             List available groups and your memberships (!GROUPLIST)
+ /members <group>     List members of a group you belong to
+ /leave <group>       Leave a group
+ /lobby              Enter the public lobby (visible to all registered users)
+ /reply <id> <text>   Reply within the currently selected conversation
+ !MEMBERLIST         List connected usernames
+ !DISCONNECT         Disconnect
+ /help               Show these commands
+Names can contain spaces; use the full name after the command."""
+
+
+def handle_input(conn, line):
+    """Commands and subsequent text share one ordered server-side selection."""
+    if line in (DISCONNECT_MESSAGE, MEMBERLIST_MESSAGE, GROUPLIST_MESSAGE):
+        send(conn, line)
+        return
+    command, _, argument = line.partition(" ")
+    argument = argument.strip()
+    if command == "/help":
+        print(HELP, flush=True)
+    elif command == "/groups":
+        send(conn, {"type": "group_list"})
+    elif command == "/lobby":
+        send(conn, {"type": "select_chat", "room_type": "group", "room": DEFAULT_ROOM})
+    elif command in ("/private", "/group", "/create", "/join", "/leave", "/members"):
+        if not argument:
+            raise ValueError(f"Use {command} <name>")
+        kinds = {
+            "/private": "select_chat", "/group": "select_chat", "/create": "create_group",
+            "/join": "join_group", "/leave": "leave_group", "/members": "group_members",
+        }
+        request = {"type": kinds[command], "room": argument}
+        if command in ("/private", "/group"):
+            request["room_type"] = "private" if command == "/private" else "group"
+        send(conn, request)
+    elif command == "/reply":
+        parts = argument.split(maxsplit=1)
+        if len(parts) != 2:
+            raise ValueError("Use /reply <msg_id> <text>")
+        send(conn, create_message(parts[1], room=None, room_type=None, reply_to=parts[0]))
+    elif command.startswith("/"):
+        raise ValueError("Unknown command; use /help")
+    else:
+        send(conn, create_message(line, room=None, room_type=None))
+
+
 def receive_messages(conn, disconnected):
     try:
         while True:
             message = receive_message(conn)
             if message.get("type") == "chat_message":
                 reply = f", reply to: {message['reply_to']}" if message['reply_to'] else ""
+                room = (
+                    "private: " + ", ".join(message["participants"])
+                    if message.get("room_type") == "private" else "group: " + message["room"]
+                )
                 print(
-                    f"\n[{message['room']}] [{message['sender_id']}] {message['text']}"
+                    f"\n[{room}] [{message['sender_id']}] {message['text']}"
                     f" (id: {message['msg_id']}{reply})",
                     flush=True,
                 )
@@ -114,6 +173,20 @@ def receive_messages(conn, disconnected):
                     + "\n".join(f" - {name}" for name in members),
                     flush=True,
                 )
+            elif message.get("type") == "group_list":
+                print(
+                    "\n[GROUPS]\n" + "\n".join(
+                        f" - {group['name']} ({group['member_count']} members)"
+                        + (" [joined]" if group["joined"] else " [not joined]")
+                        for group in message["groups"]
+                    ), flush=True,
+                )
+            elif message.get("type") == "chat_selected":
+                print(f"\n[CHAT] {message['text']}", flush=True)
+            elif message.get("type") == "group_left":
+                print(f"\n[GROUP] {message['text']}. Choose another chat if needed.", flush=True)
+            elif message.get("type") == "group_members":
+                print(f"\n[GROUP MEMBERS] {message['room']}: " + ", ".join(message["members"]), flush=True)
             else:
                 raise ValueError("Unsupported server message type")
     except (EOFError, OSError, ValueError, KeyError):
@@ -124,7 +197,7 @@ def receive_messages(conn, disconnected):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="TCP broadcast chat client")
+    parser = argparse.ArgumentParser(description="TCP private and group chat client")
     parser.add_argument("--host", default=SERVER, help="Server IP address")
     parser.add_argument("--port", type=int, default=PORT)
     parser.add_argument("--username", help="Chat name (1-20 characters); otherwise prompted")
@@ -140,9 +213,8 @@ def main():
             except (EOFError, KeyboardInterrupt):
                 send(client, DISCONNECT_MESSAGE)
                 return
-            print(f"[JOINED] {DEFAULT_ROOM} as {username}", flush=True)
-            print("Reply with /reply <msg_id> <text>.")
-            print(f"Type {MEMBERLIST_MESSAGE} to see connected members.")
+            print(f"[REGISTERED] as {username}", flush=True)
+            print(HELP, flush=True)
             receiver = threading.Thread(
                 target=receive_messages, args=(client, disconnected), daemon=True
             )
@@ -153,13 +225,7 @@ def main():
                     if disconnected.is_set():
                         break
                     try:
-                        if message == "/reply" or message.startswith("/reply "):
-                            parts = message.split(maxsplit=2)
-                            if len(parts) != 3:
-                                raise ValueError("Use /reply <msg_id> <text>")
-                            send(client, create_message(parts[2], reply_to=parts[1]))
-                        else:
-                            send(client, message)
+                        handle_input(client, message)
                     except ValueError as exc:
                         print(f"[ERROR] {exc}")
                         continue

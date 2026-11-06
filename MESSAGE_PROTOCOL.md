@@ -1,38 +1,26 @@
-# TCP JSON message protocol
+﻿# TCP JSON message protocol
 
-`backend/server.py` and `frontend/client.py` exchange UTF-8 JSON objects. Terminal input is converted into JSON by the client; the server broadcasts JSON, and the client formats it for display.
+`backend/server.py` and the terminal client `frontend/client.py` support registered users, private conversations, and group chats. The Tkinter UI still uses its separate mock client.
 
-## TCP framing
-
-Each frame contains:
+## Framing and limits
 
 ```text
-[64-byte header][UTF-8 JSON body]
+[64-byte header][UTF-8 JSON object]
 ```
 
-The header is the body's byte length written as decimal digits and padded on the right with ASCII spaces to exactly 64 bytes. The length counts the **entire encoded JSON object**, including its field names and metadata. It does not count the header. Each side reads exactly the header length and then exactly the advertised body length, so TCP fragmentation and consecutive frames are supported.
+The header is the entire encoded JSON body's byte length in decimal, padded on the right with ASCII spaces to exactly 64 bytes. The body must be a JSON object containing 1-1,048,576 bytes (1 MiB). Both sides use exact-length reads and complete writes. UTF-8 text, Thai characters, emoji, and consecutive or fragmented TCP frames are supported. Server-added metadata counts toward the limit.
 
-The JSON body must be an object and must contain between 1 and 1,048,576 bytes (1 MiB). The limit applies in both directions. The server may reject a request near this limit if adding its metadata would make the broadcast too large. JSON is serialized with `ensure_ascii=False`, preserving Thai text and emoji as UTF-8.
+Restart the server and clients together after updating. Saving a file does not reload an existing server process. `[ERROR] Expected chat_message or disconnect` during registration indicates an older running server; stop it with Ctrl+C and restart `python backend/server.py` on the server device.
 
-This protocol replaces the earlier plain-text protocol and now requires username registration. Restart the server and all clients together after updating; older clients that skip registration cannot participate in chat.
-
-If entering a username produces `[ERROR] Expected chat_message or disconnect`, the running server is an older version that does not recognize `register`. Saving the updated file does not reload an existing server process. Stop the server with Ctrl+C, run `python backend/server.py` again, and reconnect the clients. For a server on another device, update and restart the server on that device. Updated clients report this version mismatch directly instead of asking for another username.
-
-## Username registration before joining
-
-A newly connected client must choose a username before sending or receiving lobby chat. The terminal prompts for a name, or accepts `--username Alice` on the command line. A rejected name can be corrected on the same connection.
-
-Client request:
+## Register before chatting
 
 ```json
 {"type": "register", "username": "Alice"}
 ```
 
-The server trims surrounding whitespace and applies Unicode NFC normalization. The resulting name must have 1-20 Unicode code points (`len(name)` in Python) and contain only printable characters. This counts characters rather than UTF-8 bytes; some combined emoji and written characters contain multiple code points. Spaces inside a name are allowed; embedded newlines, tabs, and other non-printable characters are rejected. `server` is reserved for server responses.
+The server trims surrounding whitespace and normalizes the name to Unicode NFC. The result must contain 1-20 printable Unicode code points (`len(name)` in Python). Empty names, embedded control characters, and the reserved name `server` are rejected. Names are unique among connected clients after `casefold()` comparison, while accepted spelling and capitalization are preserved.
 
-Names must be unique among connected, registered clients, compared with `casefold()` after normalization. For example, `Alice` and `alice` cannot be registered at the same time. The server preserves the accepted spelling and capitalization for display.
-
-Server confirmation, sent only to the registering client and before any lobby messages:
+The server confirms registration only to that client:
 
 ```json
 {
@@ -40,148 +28,199 @@ Server confirmation, sent only to the registering client and before any lobby me
   "room": "lobby",
   "msg_id": "82d19a8fe94745cb9317c05d9db7f01a",
   "sender_id": "server",
-  "text": "Joined the lobby as Alice",
+  "text": "Registered as Alice",
   "reply_to": null,
   "timestamp": "2026-11-07T07:30:00.123+00:00",
   "username": "Alice"
 }
 ```
 
-`username` is an additional field for registration requests and confirmations. The terminal waits for this confirmation before starting its chat receive loop. Registration is allowed once per connection; reconnect to choose a different name. Names are released on disconnect, including an abrupt connection close. Names are session display identities, not authenticated accounts, and may be reused after the previous client disconnects.
+Registration makes the client a member of the public `lobby`, but the terminal has **no selected outgoing conversation** initially. Choose a destination before typing chat text. Registration is allowed once per connection. Disconnecting releases the username and all that connection's group memberships. These are session names, not authenticated accounts; a later connection using the same name does not inherit private sessions or group memberships.
 
-## Chat message fields
+## Terminal commands
 
-| Field | JSON type | Meaning |
-|---|---|---|
-| `type` | string | `"chat_message"` for a chat request or broadcast. |
-| `room` | string | Destination room. Currently only `"lobby"` is supported. All registered clients belong to this shared room. |
-| `msg_id` | string in broadcasts; null in client requests | Server-generated UUID4 in 32-character hexadecimal form. Identifies this message, including when another message replies to it. |
-| `sender_id` | string in broadcasts; null in client requests | The registered username, taken from the server's connection registry. Every recipient, including the sender, sees the same accepted name. |
-| `text` | string | Message content. Empty strings, line breaks, Thai characters, and emoji are supported. |
-| `reply_to` | string or null | The `msg_id` being replied to, or `null` for a normal message. A supplied ID must contain 1–128 characters. |
-| `timestamp` | string in broadcasts; null in client requests | Server receipt time as an ISO-8601 UTC timestamp with milliseconds and the `+00:00` offset. |
+| Command | Result |
+|---|---|
+| `/private <username>` | Select a private conversation with another connected user. |
+| `/create <group>` | Create a group, become its first member, and select it. |
+| `/join <group>` | Join an existing group and select it. |
+| `/group <group>` | Select a group you already belong to. |
+| `/groups` or `!GROUPLIST` | List available groups, their member counts, and whether you belong to each. |
+| `/members <group>` | List usernames in a group you belong to. |
+| `/leave <group>` | Leave a group. If selected, clear the outgoing destination. |
+| `/lobby` | Select the public lobby. Messages here are visible to all registered clients. |
+| `/reply <msg_id> <text>` | Send a reply in the selected conversation. |
+| `!MEMBERLIST` | List all connected, registered usernames, including yourself. |
+| `!DISCONNECT` | Close the connection. |
+| `/help` | Display the command guide locally. |
 
-The client helper always builds all seven fields. A raw chat request must contain `type` and `text`; omitted `room` defaults to `"lobby"`, and omitted `reply_to` defaults to `null`.
+Names may contain spaces; the entire argument after a destination command is the name. After a successful selection, ordinary text and `/reply` use that conversation. You continue receiving messages for all groups you belong to and private messages addressed to you, with each destination labeled on screen.
 
-The server generates `msg_id` and `timestamp`, and sets `sender_id` to the connection's registered username. Values supplied by the client for these fields are ignored and replaced, so a chat message cannot claim another user's name. Extra request fields are not forwarded. The server constructs one broadcast object and sends the same object to every registered client, including the sender; the client displays its own message from that echo.
+The server processes commands and chat text in order on each connection. Failed `/private`, `/create`, `/join`, or `/group` requests clear the previous outgoing selection. Subsequent text is rejected until a valid destination is selected, preventing accidental delivery into a previous conversation.
 
-### Client → server
+## Chat JSON fields
+
+| Field | Meaning |
+|---|---|
+| `type` | `"chat_message"` for chat. |
+| `room_type` | `"group"` or `"private"`; `null` together with `room: null` uses the server-selected conversation. This field distinguishes destinations even if a group and user have the same name. |
+| `room` | Group name for group requests; recipient username for explicit private requests. Private broadcasts instead contain the server's opaque conversation ID. |
+| `msg_id` | Server-generated UUID4 hexadecimal string; client placeholder is `null`. |
+| `sender_id` | Server-confirmed registered username; client placeholder is `null`. |
+| `text` | Message text, including an empty string if desired. |
+| `reply_to` | A recent message ID in the same conversation, or `null`. |
+| `timestamp` | Server receipt time as ISO-8601 UTC with milliseconds; client placeholder is `null`. |
+
+The server replaces any client claims about IDs, sender identity, or timestamps. Client-supplied recipient lists, participants, and extra metadata cannot grant access or alter delivery. Every authorized recipient, including the sender, receives the same broadcast object.
+
+### Send to the selected conversation
+
+This is how ordinary terminal text is sent:
 
 ```json
 {
   "type": "chat_message",
-  "room": "lobby",
+  "room_type": null,
+  "room": null,
   "msg_id": null,
   "sender_id": null,
-  "text": "Hello everyone!",
+  "text": "Hello!",
   "reply_to": null,
   "timestamp": null
 }
 ```
 
-### Server → all clients
+If no destination is selected, the server returns `chat_not_selected`. An omitted `room` and `room_type` also means the selected destination. For compatibility, an explicit group `room` without `room_type` is treated as a group request. The Python helper `create_message(text)` still explicitly targets the public lobby by default; the terminal uses `create_message(text, room=None, room_type=None)` to follow its selected chat.
+
+### Explicit group request
+
+```json
+{"type": "chat_message", "room_type": "group", "room": "Study", "text": "For our group", "reply_to": null}
+```
+
+The server checks that the group exists and the sender is a member, regardless of their selected chat. The output includes the eight chat fields above and the canonical group spelling.
+
+### Explicit private request and broadcast
+
+```json
+{"type": "chat_message", "room_type": "private", "room": "Bob", "text": "For Bob only", "reply_to": null}
+```
+
+Only Alice and Bob receive:
 
 ```json
 {
   "type": "chat_message",
-  "room": "lobby",
+  "room_type": "private",
+  "room": "a734fd390a4f4625948700b5aeef2071",
   "msg_id": "c72b1d3f7cde4eb8af36013e4a567901",
   "sender_id": "Alice",
-  "text": "Hello everyone!",
+  "text": "For Bob only",
   "reply_to": null,
-  "timestamp": "2026-11-06T07:30:00.123+00:00"
+  "timestamp": "2026-11-07T07:30:01.123+00:00",
+  "participants": ["Alice", "Bob"]
 }
 ```
 
-## Replies
+`participants` is server-derived and added only to private chat messages for display. The private `room` ID identifies that pair of live connections; it is not an access token. Knowing an ID does not allow an outsider to join or receive that conversation. Explicit private requests address a username, not a broadcast's opaque room ID. If the peer disconnects, the private selection is cleared. Reusing the same username requires a new selection and creates a new private session.
 
-The terminal shows each received message's ID. Reply with:
+## Group and selection requests
 
-```text
-/reply c72b1d3f7cde4eb8af36013e4a567901 Hello back!
+All requests below require registration. Group names are NFC-normalized, trimmed, contain 1-40 printable code points, and are unique case-insensitively. The creator automatically becomes a member. Groups are open to registered users who explicitly join; no invitation or approval is required. A nonmember receives no messages or member names for the group.
+
+```json
+{"type": "create_group", "room": "Study"}
 ```
 
-The client places that ID in `reply_to`. The server preserves the reference and assigns the reply its own new `msg_id`. Replies remain visible to everyone in the lobby; replying does not change the destination.
-
-The networking API can also send a reply:
-
-```python
-send(conn, create_message("Hello back!", reply_to=original_msg_id))
+```json
+{"type": "join_group", "room": "Study"}
 ```
 
-The server does not store message history or verify that a referenced ID exists. `reply_to` currently carries the relationship; quoting the original content or looking up older messages requires future history/UI support.
+```json
+{"type": "select_chat", "room_type": "group", "room": "Study"}
+```
 
-## Connected member list
+```json
+{"type": "select_chat", "room_type": "private", "room": "Bob"}
+```
 
-After registering, type `!MEMBERLIST` in the terminal client. It sends:
+Successful creation, joining, or selection returns a `chat_selected` envelope only to the requester. It includes `room_type`, the canonical `room`, authorized `members`, and `action` (`create_group`, `join_group`, or `select_chat`). The terminal prints `[CHAT] Group: Study` or `[CHAT] Private chat with Bob`.
+
+```json
+{"type": "leave_group", "room": "Study"}
+```
+
+Leaving requires membership and returns `group_left` only to the requester. The public lobby cannot be left; select another destination to avoid sending there. Other empty groups are deleted. Disconnect removes membership from all groups and deletes any groups made empty. Groups and memberships are in memory and reset when the server restarts.
+
+```json
+{"type": "group_list"}
+```
+
+The `group_list` response contains a `groups` array, for example:
+
+```json
+[{"name": "Study", "joined": true, "member_count": 2}, {"name": "lobby", "joined": true, "member_count": 3}]
+```
+
+Group names and counts are discoverable so users can join existing groups. Member names and message contents are not exposed by this list.
+
+```json
+{"type": "group_members", "room": "Study"}
+```
+
+The `group_members` response includes `room` and a sorted `members` array. The requester must be a member. Only the requester receives it. Repeating a list command refreshes the snapshot; membership updates are not pushed automatically.
+
+## Server-wide member list
+
+`!MEMBERLIST` sends:
 
 ```json
 {"type": "member_list"}
 ```
 
-The server responds only to the requester with the usual envelope and one additional field, `members`, containing the currently registered usernames:
+Only the requester receives a `member_list` envelope with `members`, such as `["Alice", "Bob"]`. It includes the requester, preserves registered spelling, sorts by `casefold()`, and excludes unregistered connections. This public list reveals online names, not any private/group message contents. Requesting it before registration returns `registration_required`.
 
-```json
-{
-  "type": "member_list",
-  "room": "lobby",
-  "msg_id": "82d19a8fe94745cb9317c05d9db7f01a",
-  "sender_id": "server",
-  "text": "Connected members",
-  "reply_to": null,
-  "timestamp": "2026-11-07T07:30:00.123+00:00",
-  "members": ["Alice", "Bob"]
-}
-```
+## Replies
 
-The list includes the requester, preserves accepted username spelling, and is sorted by `casefold()`. It is a server-wide snapshot taken under the connection registry lock. Unregistered connections are excluded; a request before registration returns `registration_required`. Run the command again to see subsequent joins or disconnects. The terminal displays the list and its count. Neither the request nor its response is broadcast to other clients.
+`reply_to` must be `null` or a 1-128 character string. The server keeps the last 10,000 accepted message IDs and their conversation contexts, without storing message bodies. A reply must refer to an ID in that index and the same group instance or private session. Unknown, expired, and cross-conversation IDs all return `invalid_reply` without broadcasting the reply text. Recreating a deleted group or reconnecting to a private peer does not reuse the old context. The reply receives a new message ID.
 
-Only the exact terminal input `!MEMBERLIST` is treated as a command. An explicit `chat_message` whose `text` equals `"!MEMBERLIST"` remains ordinary chat text.
+There is no message-history download or quoted-content lookup. A new group member does not receive earlier messages. Private and group chat text is not written into the server's shared console log.
 
-## Disconnect
-
-Typing `!DISCONNECT`, pressing Ctrl+C, or reaching terminal input EOF sends this control object before the client closes:
+## Disconnect and errors
 
 ```json
 {"type": "disconnect"}
 ```
 
-Only the `type` field is required for this control message, which is also accepted before registration. It is not broadcast and receives no acknowledgment. The server closes the connection and releases the username for reuse. An ordinary `chat_message` whose `text` happens to equal `"!DISCONNECT"` remains a chat message.
+Disconnect is accepted before or after registration and has no acknowledgment. Typing `!DISCONNECT`, Ctrl+C, or terminal EOF sends it before closing where possible. A literal `chat_message` with command-looking text remains ordinary text.
 
-## Error responses
-
-For a complete JSON object with an unsupported operation or invalid chat fields, the server sends an error only to the requesting client and keeps that connection available for subsequent requests:
-
-```json
-{
-  "type": "error",
-  "room": "lobby",
-  "msg_id": "82d19a8fe94745cb9317c05d9db7f01a",
-  "sender_id": "server",
-  "text": "Only the lobby room is available",
-  "reply_to": null,
-  "timestamp": "2026-11-06T07:30:01.456+00:00",
-  "code": "unsupported_room"
-}
-```
-
-`code` is an extra field on error responses. It provides a stable machine-readable reason:
+Errors are sent only to the requester using the standard envelope with `type: "error"`, `sender_id: "server"`, and an extra `code` field. They do not close a valid framed connection.
 
 | Code | Meaning |
 |---|---|
-| `unsupported_type` | The request type is missing or is not `register`, `chat_message`, `member_list`, or `disconnect`. |
-| `registration_required` | The connection must register a username before sending chat messages or requesting the member list. |
-| `invalid_username` | The name is not text, is empty, exceeds 20 code points after normalization, contains non-printable characters, or is reserved. |
-| `username_taken` | A connected client already owns the name (case-insensitive). |
-| `already_registered` | The connection already registered a name; reconnect to choose another. |
-| `unsupported_room` | The requested room is not `lobby`. |
-| `invalid_message` | `text` or `reply_to` has an invalid type or value. |
-| `message_too_large` | Server metadata would make the outgoing JSON body exceed 1 MiB. |
+| `unsupported_type` | Unknown or missing request type. |
+| `registration_required` | Register before chat, selection, or list/group operations. |
+| `invalid_username` | Invalid or reserved name. |
+| `username_taken` | Another connected user owns the name. |
+| `already_registered` | Reconnect to choose a different username. |
+| `invalid_group` | Invalid group name or attempt to leave the public lobby. |
+| `group_exists` | The requested new group already exists. |
+| `group_not_found` | The named group does not exist. |
+| `not_group_member` | Group sending, selection, member listing, or leaving requires membership. |
+| `invalid_recipient` | Invalid recipient name or attempt to privately chat with yourself. |
+| `user_not_found` | The private recipient is not connected. |
+| `unsupported_room_type` | Use `private` or `group`. |
+| `chat_not_selected` | Choose a valid destination before sending implicit chat text. |
+| `invalid_message` | Invalid text or reply-reference type/length. |
+| `invalid_reply` | Reply ID is unavailable or belongs to another conversation. |
+| `message_too_large` | The final JSON exceeds 1 MiB. |
 
-Malformed headers, invalid lengths, invalid UTF-8/JSON, non-object JSON, truncated frames, and closed connections cause that client's connection to close. Other clients continue operating. A client rejects an oversized outgoing JSON body locally before sending it.
+Malformed headers, invalid lengths, invalid UTF-8/JSON, non-object JSON, and truncated frames close only the offending connection.
 
-## Current scope and UI mapping
+## Permission boundaries and UI integration
 
-The server-wide connected member list is available through `!MEMBERLIST`. The `room` field prepares the protocol for group routing. Group creation, joining specific groups, per-group membership lists, private routing, and persistent history are not implemented yet. Requests for other rooms are rejected rather than broadcast to the lobby.
+The server derives recipients from its own connection and membership registries. Private chat delivers to exactly the sender and selected peer. Group chat delivers to current members only, with membership rechecked before delivery. Membership changes serialize with sends so a client receives no further group frames after its leave confirmation. A selected destination does not grant membership; explicit JSON requests undergo the same checks as terminal commands.
 
-The separate Tkinter UI still uses its mock client. Its existing contract uses `room_type`, `room_id`, `message_id`, and `sender`; this wire protocol uses the requested `room`, `msg_id`, and `sender_id`. Future real-client integration must map these fields (for example, `room` → `room_id`, `msg_id` → `message_id`, and `sender_id` → `sender`) and supply the UI's room type.
+These permissions govern delivery between connected clients. The transport is raw TCP, without TLS or authenticated persistent accounts. The server operator controls the server process. Group creation/joining is open, while reading and sending require membership.
+
+The Tkinter UI remains on its mock backend. Its contract uses `room_type`, `room_id`, `message_id`, and `sender`; a future real network adapter must map `room` to `room_id`, `msg_id` to `message_id`, and `sender_id` to `sender`. Chatbot integration, persistent accounts/history, and invitation-only groups remain future work.

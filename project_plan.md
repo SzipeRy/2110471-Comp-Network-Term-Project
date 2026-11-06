@@ -47,6 +47,8 @@
 
 ## Shared Message Contract
 
+The current TCP server and terminal client implement the wire contract documented in [MESSAGE_PROTOCOL.md](MESSAGE_PROTOCOL.md), including private/group routing and permission checks. The structure below describes the existing Tkinter UI contract; a future real-client adapter must map the wire fields (`room`, `msg_id`, `sender_id`) to its UI fields (`room_id`, `message_id`, `sender`).
+
 ```json
 {
   "type": "chat_message",

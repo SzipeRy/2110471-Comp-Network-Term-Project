@@ -89,7 +89,7 @@ class BroadcastChatTests(unittest.TestCase):
         for message in received:
             self.assertEqual(message, received[0])
             self.assertEqual(set(message), {
-                "type", "room", "msg_id", "sender_id", "text", "reply_to", "timestamp",
+                "type", "room", "room_type", "msg_id", "sender_id", "text", "reply_to", "timestamp",
             })
             self.assertEqual(message["type"], "chat_message")
             self.assertEqual(message["room"], "lobby")
@@ -99,6 +99,231 @@ class BroadcastChatTests(unittest.TestCase):
             self.assertEqual(uuid.UUID(message["msg_id"]).version, 4)
             self.assertEqual(datetime.fromisoformat(message["timestamp"]).utcoffset(), timedelta(0))
         return received[0]
+
+    def request(self, conn, message, expected_type):
+        client.send(conn, message)
+        response = client.receive_message(conn)
+        self.assertEqual(response["type"], expected_type, response)
+        return response
+
+    def assert_quiet(self, *connections):
+        self.assertEqual(select.select(list(connections), [], [], 0.1)[0], [])
+
+    def test_private_chat_only_reaches_its_two_participants(self):
+        alice, bob, carol = self.connect("Alice"), self.connect("Bob"), self.connect("Carol")
+        pending = self.connect(registered=False)
+        selected = self.request(alice, {
+            "type": "select_chat", "room_type": "private", "room": "bob",
+        }, "chat_selected")
+        self.assertEqual(selected["members"], ["Alice", "Bob"])
+        client.handle_input(alice, "Private secret")
+        original = client.receive_message(alice)
+        self.assertEqual(original, client.receive_message(bob))
+        self.assertEqual(original["room"], selected["room"])
+        self.assertEqual(original["participants"], ["Alice", "Bob"])
+        self.assertEqual(original["text"], "Private secret")
+        self.assert_quiet(carol, pending)
+        # The reverse direction resolves to the same conversation.
+        client.send(bob, client.create_message("Reply", room="Alice", room_type="private", reply_to=original["msg_id"]))
+        reply = client.receive_message(alice)
+        self.assertEqual(reply, client.receive_message(bob))
+        self.assertEqual(reply["room"], original["room"])
+        self.assertEqual(reply["sender_id"], "Bob")
+        # Guessing a conversation ID cannot subscribe an outsider to it.
+        error = self.request(carol, {
+            "type": "select_chat", "room_type": "private", "room": original["room"],
+        }, "error")
+        self.assertEqual(error["code"], "invalid_recipient")
+        self.assert_quiet(alice, bob, pending)
+
+    def test_groups_require_membership_for_messages_selection_and_member_lists(self):
+        alice, bob, carol = self.connect("Alice"), self.connect("Bob"), self.connect("Carol")
+        created = self.request(alice, {"type": "create_group", "room": "Study"}, "chat_selected")
+        self.assertEqual(created["members"], ["Alice"])
+        joined = self.request(bob, {"type": "join_group", "room": "study"}, "chat_selected")
+        self.assertEqual(joined["room"], "Study")
+        for request in [
+            client.create_message("Intrusion", room="Study"),
+            {"type": "select_chat", "room_type": "group", "room": "Study"},
+            {"type": "group_members", "room": "Study"},
+            {"type": "leave_group", "room": "Study"},
+        ]:
+            self.assertEqual(self.request(carol, request, "error")["code"], "not_group_member")
+        client.handle_input(alice, "Study secret")
+        message = client.receive_message(alice)
+        self.assertEqual(message, client.receive_message(bob))
+        self.assertEqual((message["room_type"], message["room"]), ("group", "Study"))
+        self.assert_quiet(carol)
+        listing = self.request(carol, {"type": "group_list"}, "group_list")
+        study = next(g for g in listing["groups"] if g["name"] == "Study")
+        self.assertEqual(study, {"name": "Study", "joined": False, "member_count": 2})
+        self.request(carol, {"type": "join_group", "room": "Study"}, "chat_selected")
+        members = self.request(carol, {"type": "group_members", "room": "Study"}, "group_members")
+        self.assertEqual(members["members"], ["Alice", "Bob", "Carol"])
+        client.handle_input(carol, "Now authorized")
+        for conn in [alice, bob, carol]:
+            self.assertEqual(client.receive_message(conn)["sender_id"], "Carol")
+
+    def test_failed_destination_change_cannot_fall_back_to_previous_chat(self):
+        alice, bob = self.connect("Alice"), self.connect("Bob")
+        self.request(alice, {"type": "select_chat", "room_type": "group", "room": "lobby"}, "chat_selected")
+        for request in [
+            {"type": "select_chat", "room_type": "private", "room": "Missing"},
+            {"type": "join_group", "room": "Missing"},
+            {"type": "create_group", "room": "lobby"},
+        ]:
+            self.request(alice, request, "error")
+            client.handle_input(alice, "Must not reach the old public chat")
+            self.assertEqual(client.receive_message(alice)["code"], "chat_not_selected")
+            self.assert_quiet(bob)
+
+    def test_client_cannot_forge_participants_recipients_or_sender(self):
+        alice, bob, carol = self.connect("Alice"), self.connect("Bob"), self.connect("Carol")
+        request = client.create_message("Only Alice and Bob", room="Bob", room_type="private")
+        request.update(sender_id="Carol", participants=["Alice", "Bob", "Carol"], recipients=["Carol"])
+        client.send(alice, request)
+        delivered = client.receive_message(alice)
+        self.assertEqual(delivered, client.receive_message(bob))
+        self.assertEqual(delivered["sender_id"], "Alice")
+        self.assertEqual(delivered["participants"], ["Alice", "Bob"])
+        self.assertNotIn("recipients", delivered)
+        self.assert_quiet(carol)
+
+    def test_group_and_user_with_same_name_are_separate_destinations(self):
+        alice, bob, carol = self.connect("Alice"), self.connect("Bob"), self.connect("Carol")
+        self.request(alice, {"type": "create_group", "room": "Bob"}, "chat_selected")
+        self.request(carol, {"type": "join_group", "room": "Bob"}, "chat_selected")
+        client.send(alice, client.create_message("For the group", room="Bob", room_type="group"))
+        self.assertEqual(client.receive_message(alice)["room_type"], "group")
+        self.assertEqual(client.receive_message(carol)["text"], "For the group")
+        self.assert_quiet(bob)
+        client.send(alice, client.create_message("For the user", room="Bob", room_type="private"))
+        self.assertEqual(client.receive_message(alice)["room_type"], "private")
+        self.assertEqual(client.receive_message(bob)["text"], "For the user")
+        self.assert_quiet(carol)
+
+    def test_switching_destinations_preserves_group_and_private_privacy(self):
+        alice, bob, carol = self.connect("Alice"), self.connect("Bob"), self.connect("Carol")
+        self.request(alice, {"type": "create_group", "room": "AB"}, "chat_selected")
+        self.request(bob, {"type": "join_group", "room": "AB"}, "chat_selected")
+        self.request(carol, {"type": "create_group", "room": "AC"}, "chat_selected")
+        self.request(alice, {"type": "join_group", "room": "AC"}, "chat_selected")
+        client.handle_input(alice, "Only AC")
+        self.assertEqual(client.receive_message(alice)["text"], "Only AC")
+        self.assertEqual(client.receive_message(carol)["text"], "Only AC")
+        self.assert_quiet(bob)
+        self.request(alice, {"type": "select_chat", "room_type": "private", "room": "Bob"}, "chat_selected")
+        client.handle_input(alice, "Only private AB")
+        for conn in [alice, bob]:
+            self.assertEqual(client.receive_message(conn)["room_type"], "private")
+        self.assert_quiet(carol)
+        self.request(alice, {"type": "select_chat", "room_type": "group", "room": "AB"}, "chat_selected")
+        client.handle_input(alice, "Only group AB")
+        for conn in [alice, bob]:
+            self.assertEqual(client.receive_message(conn)["room"], "AB")
+        self.assert_quiet(carol)
+
+    def test_leaving_and_disconnecting_remove_group_access_and_delete_empty_groups(self):
+        alice, bob = self.connect("Alice"), self.connect("Bob")
+        self.request(alice, {"type": "create_group", "room": "Study"}, "chat_selected")
+        self.request(bob, {"type": "join_group", "room": "Study"}, "chat_selected")
+        self.request(alice, {"type": "leave_group", "room": "Study"}, "group_left")
+        client.handle_input(bob, "After Alice left")
+        self.assertEqual(client.receive_message(bob)["text"], "After Alice left")
+        self.assert_quiet(alice)
+        error = self.request(alice, client.create_message("Denied", room="Study"), "error")
+        self.assertEqual(error["code"], "not_group_member")
+        bob.close()
+        wait_for_line(self.logs, "[DISCONNECTED]")
+        listing = self.request(alice, {"type": "group_list"}, "group_list")
+        self.assertEqual([g["name"] for g in listing["groups"]], ["lobby"])
+
+    def test_reused_username_does_not_inherit_old_private_session(self):
+        alice, bob = self.connect("Alice"), self.connect("Bob")
+        selected = self.request(alice, {"type": "select_chat", "room_type": "private", "room": "Bob"}, "chat_selected")
+        client.handle_input(alice, "Old private session")
+        original = client.receive_message(alice)
+        client.receive_message(bob)
+        bob.close()
+        wait_for_line(self.logs, "[DISCONNECTED]")
+        replacement = self.connect("Bob")
+        client.handle_input(alice, "Do not send to a replacement user")
+        self.assertEqual(client.receive_message(alice)["code"], "chat_not_selected")
+        self.assert_quiet(replacement)
+        fresh = self.request(alice, {"type": "select_chat", "room_type": "private", "room": "Bob"}, "chat_selected")
+        self.assertNotEqual(fresh["room"], selected["room"])
+        client.handle_input(alice, f"/reply {original['msg_id']} Not this conversation")
+        self.assertEqual(client.receive_message(alice)["code"], "invalid_reply")
+        self.assert_quiet(replacement)
+
+    def test_cross_conversation_reply_is_rejected_without_leaking_text(self):
+        alice, bob, carol = self.connect("Alice"), self.connect("Bob"), self.connect("Carol")
+        self.request(alice, {"type": "select_chat", "room_type": "private", "room": "Bob"}, "chat_selected")
+        client.handle_input(alice, "Private original")
+        original = client.receive_message(alice)
+        client.receive_message(bob)
+        self.request(alice, {"type": "create_group", "room": "AC"}, "chat_selected")
+        self.request(carol, {"type": "join_group", "room": "AC"}, "chat_selected")
+        client.handle_input(alice, f"/reply {original['msg_id']} Private content must not be quoted here")
+        self.assertEqual(client.receive_message(alice)["code"], "invalid_reply")
+        self.assert_quiet(bob, carol)
+
+    def test_group_operations_reject_unregistered_clients_and_invalid_destinations(self):
+        pending = self.connect(registered=False)
+        for request in [
+            {"type": "group_list"}, {"type": "create_group", "room": "Study"},
+            {"type": "join_group", "room": "lobby"}, {"type": "group_members", "room": "lobby"},
+            {"type": "select_chat", "room_type": "private", "room": "Alice"},
+        ]:
+            self.assertEqual(self.request(pending, request, "error")["code"], "registration_required")
+        alice = self.connect("Alice")
+        for request, code in [
+            ({"type": "create_group", "room": ""}, "invalid_group"),
+            ({"type": "create_group", "room": "x" * 41}, "invalid_group"),
+            ({"type": "create_group", "room": "lobby"}, "group_exists"),
+            ({"type": "select_chat", "room_type": "private", "room": "Alice"}, "invalid_recipient"),
+            ({"type": "select_chat", "room_type": "private", "room": "Missing"}, "user_not_found"),
+            ({"type": "select_chat", "room_type": "broadcast", "room": "lobby"}, "unsupported_room_type"),
+        ]:
+            self.assertEqual(self.request(alice, request, "error")["code"], code)
+
+    def test_terminal_commands_route_private_and_group_messages(self):
+        bob, carol = self.connect("Bob Smith"), self.connect("Carol")
+        terminal = subprocess.Popen(
+            [sys.executable, "-u", "frontend/client.py", "--port", str(self.address[1]), "--username", "Alice"],
+            cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, encoding="utf-8", env=self.env,
+        )
+        self.addCleanup(self.stop_process, terminal)
+        output = queue.Queue()
+        threading.Thread(target=collect_lines, args=(terminal.stdout, output), daemon=True).start()
+        wait_for_line(output, "[REGISTERED] as Alice")
+        terminal.stdin.write("/private Bob Smith\nA private hello\n")
+        terminal.stdin.flush()
+        wait_for_line(output, "[CHAT] Private chat with Bob Smith")
+        wait_for_line(output, "[Alice] A private hello")
+        private = client.receive_message(bob)
+        self.assertEqual(private["room_type"], "private")
+        self.assert_quiet(carol)
+        terminal.stdin.write("/create Study Team\n")
+        terminal.stdin.flush()
+        wait_for_line(output, "[CHAT] Group: Study Team")
+        self.request(bob, {"type": "join_group", "room": "Study Team"}, "chat_selected")
+        terminal.stdin.write("A group hello\n/members Study Team\n/groups\n")
+        terminal.stdin.flush()
+        wait_for_line(output, "[Alice] A group hello")
+        wait_for_line(output, "[GROUP MEMBERS] Study Team: Alice, Bob Smith")
+        wait_for_line(output, "Study Team (2 members) [joined]")
+        self.assertEqual(client.receive_message(bob)["room"], "Study Team")
+        self.assert_quiet(carol)
+        terminal.stdin.write("/leave Study Team\nMust choose again\n")
+        terminal.stdin.flush()
+        wait_for_line(output, "[GROUP] Left group Study Team")
+        wait_for_line(output, "[ERROR] chat_not_selected")
+        self.assert_quiet(bob, carol)
+        terminal.stdin.write(client.DISCONNECT_MESSAGE + "\n")
+        terminal.stdin.flush()
+        self.assertEqual(terminal.wait(timeout=5), 0)
 
     def test_every_client_receives_own_and_other_messages(self):
         alice, bob, carol = self.connect("Alice"), self.connect("Bob"), self.connect("Carol")
@@ -197,8 +422,8 @@ class BroadcastChatTests(unittest.TestCase):
         cases = [
             ({"type": "unknown"}, "unsupported_type"),
             ({}, "unsupported_type"),
-            (client.create_message("wrong room", room="study"), "unsupported_room"),
-            (client.create_message("wrong room", room=None), "unsupported_room"),
+            (client.create_message("wrong room", room="study"), "group_not_found"),
+            (client.create_message("wrong room", room=None), "invalid_group"),
             (client.create_message(123), "invalid_message"),
             (client.create_message("bad reply", reply_to=[]), "invalid_message"),
             (client.create_message("bad reply", reply_to=""), "invalid_message"),
@@ -352,8 +577,11 @@ class BroadcastChatTests(unittest.TestCase):
         threading.Thread(
             target=collect_lines, args=(terminal.stdout, output), daemon=True
         ).start()
-        wait_for_line(output, "[JOINED] lobby as TerminalUser")
+        wait_for_line(output, "[REGISTERED] as TerminalUser")
         wait_for_line(self.logs, "[ACTIVE CONNECTIONS]")
+        terminal.stdin.write("/lobby\n")
+        terminal.stdin.flush()
+        wait_for_line(output, "[CHAT] Group: lobby")
         terminal.stdin.write(client.MEMBERLIST_MESSAGE + "\n")
         terminal.stdin.flush()
         wait_for_line(output, "[MEMBERS] Connected members (2):")
@@ -400,7 +628,10 @@ class BroadcastChatTests(unittest.TestCase):
         wait_for_line(output, "[ERROR] That username is already in use")
         terminal.stdin.write("  Bob  \n")
         terminal.stdin.flush()
-        wait_for_line(output, "[JOINED] lobby as Bob")
+        wait_for_line(output, "[REGISTERED] as Bob")
+        terminal.stdin.write("/lobby\n")
+        terminal.stdin.flush()
+        wait_for_line(output, "[CHAT] Group: lobby")
         terminal.stdin.write("Hello from Bob\n")
         terminal.stdin.flush()
         wait_for_line(output, "[Bob] Hello from Bob")

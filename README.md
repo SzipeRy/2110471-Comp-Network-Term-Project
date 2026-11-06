@@ -88,7 +88,7 @@ The Tkinter command should open a small demonstration window. Close it when fini
 |   |-- client.py        # Working terminal chat client
 |   `-- ui/              # Tkinter UI (currently uses a mock client)
 |-- tests/
-|   `-- test_chat.py     # TCP broadcast integration tests
+|   `-- test_chat.py     # TCP chat, routing, and permission tests
 |-- .venv/             # Local environment; excluded from Git
 |-- .gitignore
 |-- requirements.txt   # Shared Python dependencies
@@ -111,7 +111,7 @@ Open two or more additional terminals and run this command in each:
 python frontend/client.py
 ```
 
-Each client is prompted to choose a username before entering the lobby. Names must contain 1-20 printable characters after surrounding whitespace is trimmed and Unicode is normalized. Names must be unique among connected clients (case-insensitive); invalid or taken names prompt you to choose again. The name `server` is reserved. Thai text and emoji are supported; the length is measured in Unicode code points rather than UTF-8 bytes.
+Each client is prompted to choose a username before chatting. Names must contain 1-20 printable characters after surrounding whitespace is trimmed and Unicode is normalized. Names must be unique among connected clients (case-insensitive); invalid or taken names prompt you to choose again. The name `server` is reserved. Thai text and emoji are supported; the length is measured in Unicode code points rather than UTF-8 bytes.
 
 You can also supply a name directly:
 
@@ -119,7 +119,26 @@ You can also supply a name directly:
 python frontend/client.py --username Alice
 ```
 
-Every registered client receives every lobby message, including its own message echoed by the server. Messages show the lobby room, sender's registered username, and server-generated message ID. The server sets the sender name, so all clients see the same identity. Reply using `/reply <msg_id> <text>`. Type `!DISCONNECT` or press Ctrl+C to leave. Reconnect to choose a different username; disconnected names become available again.
+After registration, choose a private conversation or group before sending text. The terminal prints the command guide, which you can display again with `/help`.
+
+| Command | Action |
+|---|---|
+| `/private Bob` | Enter a private chat with connected user Bob. |
+| `/create Study` | Create a group, join it, and enter it. |
+| `/join Study` | Join and enter an existing group. |
+| `/group Study` | Enter a group you already belong to. |
+| `/groups` or `!GROUPLIST` | Show available groups and mark groups you have joined. |
+| `/members Study` | Show members of a group you belong to. |
+| `/leave Study` | Leave a group and stop receiving its messages. |
+| `/lobby` | Enter the public lobby, visible to every registered user. |
+| `/reply <msg_id> <text>` | Reply to a recent message in the selected conversation. |
+| `!DISCONNECT` | Disconnect. |
+
+For example, Alice types `/create Study`, Bob types `/join Study`, and they can then exchange ordinary text. Carol receives none of those messages until she explicitly joins Study. Alice can switch to `/private Bob` for messages delivered only to Alice and Bob, then `/group Study` to return to the group. Names with spaces are supported: `/private Bob Smith` or `/create Study Team`.
+
+Every authorized recipient, including the sender, sees the same server-confirmed sender name, destination, and message ID. You receive messages for all groups you belong to, even while a different chat is selected. A failed destination change clears the outgoing selection, so subsequent text cannot accidentally go to your previous chat. Private and group messages are never broadcast to outsiders; the server checks permissions on every request. Groups are open to registered users who explicitly join, without invitations.
+
+Reconnect to choose a different username. Disconnecting releases the name and all group memberships; empty groups are deleted. Names and groups are session state and reset when the server restarts.
 
 Type `!MEMBERLIST` to see the currently connected, registered usernames, including your own. The server sends the sorted list only to you. Run the command again to refresh it after someone joins or disconnects. Connections that have not registered a username are excluded.
 
@@ -131,9 +150,9 @@ python frontend/client.py --host 192.168.1.100
 
 The server listens on all IPv4 interfaces by default. If Windows prompts, allow Python through the firewall on your private network. Both commands accept `--port` (default `5050`); both sides must use the same port.
 
-The protocol uses a 64-byte, space-padded decimal length followed by a UTF-8 JSON object in both directions. The entire JSON body is limited to 1 MiB. Chat messages contain `type`, `room`, `msg_id`, `sender_id`, `text`, `reply_to`, and `timestamp`; the server assigns identity, message IDs, and UTC timestamps. See [MESSAGE_PROTOCOL.md](MESSAGE_PROTOCOL.md) for examples, validation rules, and error responses. Restart both server and clients after updating, since the earlier plain-text protocol is incompatible.
+The protocol uses a 64-byte, space-padded decimal length followed by a UTF-8 JSON object in both directions. The entire JSON body is limited to 1 MiB. Chat messages contain `type`, `room_type`, `room`, `msg_id`, `sender_id`, `text`, `reply_to`, and `timestamp`; private broadcasts also contain server-derived `participants`. The server assigns identity, message IDs, UTC timestamps, and permitted recipients. Replies must reference a recent message in the same conversation. See [MESSAGE_PROTOCOL.md](MESSAGE_PROTOCOL.md) for the complete JSON contract, control requests, and permission rules. Restart both server and clients after updating.
 
-This is a shared `lobby` chat room; private and group routing are future work. The Tkinter UI still uses its mock client and is not connected to this terminal chat implementation.
+Private and group routing are implemented in the terminal client. The Tkinter UI still uses its mock client and is not connected to this implementation.
 
 Run the loopback integration tests:
 
