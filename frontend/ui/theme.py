@@ -12,6 +12,8 @@ ACC_DARK = "#2459c7"
 ME = "#dbe8ff"      # my bubbles / selected row
 THEM = "#eef0f3"    # others' bubbles / hover
 BOT = "#e6f6ea"     # chatbot bubbles
+MENTION = "#fff4d6"       # bubbles that mention you, mention notifications
+MENTION_TAG = "#ffd666"   # highlight behind "@you"
 ERR = "#dd3333"
 ONLINE = "#2db36a"
 

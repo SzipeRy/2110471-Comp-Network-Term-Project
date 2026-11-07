@@ -13,8 +13,8 @@ scrolling, emoji, reply controls, and tab closing/reopening.
 
 **Physical LAN acceptance is still one outstanding release task.** Local tests
 use several clients on one computer; they do not establish results on two
-physical computers. Chatbot transport and expanded mention behavior remain
-separate team dependencies, listed at the end.
+physical computers. Chatbot transport and expanded mention behavior were added
+afterwards by Person 3; see the end of this file.
 
 ## Implemented
 
@@ -51,8 +51,8 @@ separate team dependencies, listed at the end.
 | P4-07 | Background login worker calls Tk APIs | Fixed, Person 4 | Main-thread queue dispatch; hidden Tk tests capture callback errors |
 | P4-08 | Desktop remains in chat after server shutdown | Fixed, Person 4 | Returns to login; one disconnect notification; workers exit |
 | P4-09 | Closing the app twice raises a Tcl cleanup error | Fixed, Person 4 | Idempotent close exercised by GUI test cleanup |
-| P4-10 | Real chatbot requests have no backend handler | Blocked, Persons 1 and 3 | Agree protocol; implement handler/model; then add TCP tests |
-| P4-11 | Existing mention matching only covers `@word` names | Pending Person 3 rules | Agree boundaries for spaces/punctuation, notifications, and reply mentions |
+| P4-10 | Real chatbot requests have no backend handler | Fixed, Person 3 | Server chatbot room and `@Bot`; `tests/test_chatbot.py`, `tests/test_person3_ui.py` |
+| P4-11 | Existing mention matching only covers `@word` names | Fixed, Person 3 | Server-derived `mentions` for spaces, Thai, emoji, and punctuation; notifications; `tests/test_mentions.py` |
 | P4-12 | Physical two-computer behavior has no recorded evidence | Pending two devices / Person 4 | Execute checklist below on the team's network |
 | P4-13 | Emoji picker stays open after its chat tab closes or group is left | Fixed, Person 4 | GUI regression tests and visible tab-close check |
 | P4-14 | Emoji-only messages wrap into unnecessarily narrow bubbles | Fixed, Person 4 | Font-measured bubble width; visible emoji-only row |
@@ -133,8 +133,9 @@ locally verified behavior, rather than 12 unfinished implementation tasks.
 
 ## Remaining dependencies
 
-- Chatbot transport and end-to-end chatbot evidence: blocked on Persons 1 and 3.
-- Full mention behavior and AI/prompt documentation: Person 3.
+- Chatbot transport, mention behavior, and AI/prompt documentation: done by
+  Person 3, see [CHATBOT_AND_MENTIONS.md](CHATBOT_AND_MENTIONS.md). A live
+  chatbot demo needs `ANTHROPIC_API_KEY` on the server computer.
 - Physical two-computer screenshots and final demo acceptance: requires the
   team's devices and LAN; the checklist is ready.
 - UI screenshot selection/presentation polish: coordinate with Person 2 after

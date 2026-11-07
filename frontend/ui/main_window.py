@@ -37,6 +37,19 @@ class MainWindow(tk.Frame):
 
         right = tk.Frame(self, bg=T.BG)
         right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
+        # Mention notification bar, shown above the chat tabs for a few seconds.
+        self.mention_bar = tk.Frame(right, bg=T.MENTION, highlightthickness=1,
+                                    highlightbackground=T.MENTION_TAG)
+        tk.Button(self.mention_bar, text="✕", font=T.F_SMALL, relief="flat", bd=0, bg=T.MENTION,
+                  fg=T.MUTE, activebackground=T.MENTION, cursor="hand2",
+                  command=self.hide_mention).pack(side="right", padx=(0, 6))
+        T.button(self.mention_bar, "Open", self.open_mention).pack(side="right", padx=6, pady=4)
+        self.mention_lbl = tk.Label(self.mention_bar, font=T.F, fg=T.INK, bg=T.MENTION, anchor="w",
+                                    justify="left", wraplength=480, cursor="hand2")
+        self.mention_lbl.pack(side="left", fill="x", expand=True, padx=8, pady=4)
+        self.mention_lbl.bind("<Button-1>", lambda _e: self.open_mention())
+        self.mention_key = None
+        self._mention_job = None
         self.placeholder = tk.Label(right, text="Select a user, group or the chatbot to start chatting",
                                     font=T.F, fg=T.MUTE, bg=T.BG)
         self.placeholder.pack(expand=True)
@@ -107,10 +120,61 @@ class MainWindow(tk.Frame):
             self.groups_dlg.refresh()
 
     def on_message(self, msg):
-        room = self._room(msg["room_type"], msg["room_id"])
-        room.add_message(msg)
-        if self._current_key() != (msg["room_type"], msg["room_id"]):
-            self.tabs.tab(room, text=self.titles[room] + "  •")  # unread dot
+        key = (msg["room_type"], msg["room_id"])
+        room = self._room(*key)
+        mentioned = room.add_message(msg) and self._mentions_me(msg)
+        current = self._current_key() == key
+        if mentioned and not current:
+            room.unread_mention = True
+        if not current:  # unread dot, or "@" while an unread message mentions you
+            self.tabs.tab(room, text=self.titles[room] + ("  @" if room.unread_mention else "  •"))
+        if mentioned and not (current and self.focus_displayof() is not None):
+            self.show_mention(msg, key)
+
+    # ---------- @mention notifications ----------
+    def _mentions_me(self, msg):
+        me = (self.app.username or "").casefold()
+        return (msg["type"] == "chat_message" and msg["sender"].casefold() != me
+                and any(name.casefold() == me for name in msg.get("mentions") or ()))
+
+    @staticmethod
+    def _place(key):
+        rtype, rid = key
+        return {"group": f"#{rid}", "private": "a private chat"}.get(rtype, "the chatbot room")
+
+    def show_mention(self, msg, key):
+        text = " ".join(msg["text"].split())
+        if len(text) > 70:
+            text = text[:69] + "…"
+        self.mention_lbl.config(text=f"🔔 {msg['sender']} mentioned you in {self._place(key)}: {text}")
+        self.mention_key = key
+        if not self.mention_bar.winfo_manager():
+            first = self.tabs if self.tabs.winfo_manager() else self.placeholder
+            self.mention_bar.pack(fill="x", pady=(0, 6), before=first)
+        if self._mention_job:
+            self.after_cancel(self._mention_job)
+        self._mention_job = self.after(8000, self.hide_mention)
+        if self.winfo_viewable():
+            self.bell()
+
+    def hide_mention(self):
+        if self._mention_job:
+            self.after_cancel(self._mention_job)
+            self._mention_job = None
+        self.mention_key = None
+        self.mention_bar.pack_forget()
+
+    def open_mention(self):
+        key = self.mention_key
+        self.hide_mention()
+        if key in self.rooms:
+            self._room(*key, select=True)
+
+    def destroy(self):
+        if self._mention_job:  # no timer may fire after the window is gone
+            self.after_cancel(self._mention_job)
+            self._mention_job = None
+        super().destroy()
 
     # ---------- rooms / tabs ----------
     def _title(self, rtype, rid):
@@ -179,6 +243,7 @@ class MainWindow(tk.Frame):
         room = self.nametowidget(tab_id)
         room.clear_reply()
         room.close_emoji()
+        room.hide_suggestions()
         self.tabs.hide(room)
         self._show_placeholder_if_empty()
         self.render_sidebar()
@@ -195,9 +260,14 @@ class MainWindow(tk.Frame):
 
     def _tab_changed(self, _e=None):
         key = self._current_key()
+        for room in self.rooms.values():
+            room.hide_suggestions()
         if key:
             room = self.rooms[key]
-            self.tabs.tab(room, text=self.titles[room])  # clear unread dot
+            room.unread_mention = False
+            self.tabs.tab(room, text=self.titles[room])  # clear unread dot / mention mark
+            if key == self.mention_key:
+                self.hide_mention()  # the mention is now in view
             room.entry.focus()
         self.render_sidebar()
 
