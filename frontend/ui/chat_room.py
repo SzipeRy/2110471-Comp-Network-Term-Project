@@ -22,6 +22,7 @@ class ChatRoom(tk.Frame):
         self.messages = {}      # message_id -> msg (for reply quotes)
         self.system_messages = {}  # server event IDs, separate from replyable chat
         self.reply_to = None
+        self.unsent = None      # (text, reply_to) sent but not yet echoed by the server
         self.typing_row = None
         self.emoji_picker = None
 
@@ -132,9 +133,27 @@ class ChatRoom(tk.Frame):
             return  # the server takes one chatbot question at a time; keep the draft
         if self.app.client.send_message(self.room_type, self.room_id, text, self.reply_to) is False:
             return
+        self.unsent = (text, self.reply_to)  # kept until the server echoes it back
         self.entry.delete(0, "end")
         self.clear_reply()
         self.hide_suggestions()
+
+    def restore_unsent(self):
+        """The server rejected a message: put it back in an empty chat box so it is not lost."""
+        if not self.unsent or self.entry.cget("state") == "disabled" or self.entry.get().strip():
+            return
+        text, reply_to = self.unsent
+        self.entry.insert(0, text)
+        if reply_to in self.messages:
+            self.set_reply(reply_to)
+
+    def _forget_unsent(self, msg):
+        """Our own message came back from the server, so it was delivered."""
+        if self.unsent and msg["text"] == self.unsent[0]:
+            if self.entry.get().strip() == self.unsent[0]:  # restored by an unrelated error
+                self.entry.delete(0, "end")
+                self.clear_reply()
+            self.unsent = None
 
     def _on_return(self, _e=None):
         if self.suggested:
@@ -220,6 +239,7 @@ class ChatRoom(tk.Frame):
         T.bind_tree(bubble, "<Button-3>", lambda e, m=msg["message_id"]: self._menu(e, m))
         T.bind_tree(bubble, "<Button-2>", lambda e, m=msg["message_id"]: self._menu(e, m))  # macOS
         if mine:
+            self._forget_unsent(msg)
             self._note_outside_mentions(names)
             if self.room_type == "bot":
                 self._show_typing()  # after the server echo, so it sits below the question

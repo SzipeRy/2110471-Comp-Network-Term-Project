@@ -12,6 +12,10 @@ from . import theme
 from .login import LoginFrame
 from .main_window import MainWindow
 
+# Server error codes that can reject a chat message; the unsent text goes back in the chat box.
+SEND_ERRORS = {"invalid_message", "message_too_large", "invalid_reply", "bot_busy",
+               "group_not_found", "not_group_member", "user_not_found"}
+
 
 class App(tk.Tk):
     def __init__(self, client):
@@ -64,6 +68,9 @@ class App(tk.Tk):
                 elif kind == "groups":
                     self.groups = data
                 if kind == "error":
+                    if self.main and str(data).split(":", 1)[0] in SEND_ERRORS:
+                        for room in self.main.rooms.values():
+                            room.restore_unsent()
                     messagebox.showerror("Error", data)
                 elif kind == "bye":
                     if self.main:
