@@ -58,7 +58,7 @@ With the environment activated:
 python -m pip install -r requirements.txt
 ```
 
-This installs Flask and its dependencies. Python's `socket` module is included in Python. Tkinter normally comes with the official Windows Python installation; neither needs to be installed with pip.
+This installs Flask, the Anthropic SDK (used only when the server's AI chatbot runs on Claude), and their dependencies. Python's `socket` module is included in Python. Tkinter normally comes with the official Windows Python installation; neither needs to be installed with pip.
 
 ## 5. Verify Flask and Tkinter
 
@@ -87,7 +87,9 @@ The Tkinter command should open a small demonstration window. Close it when fini
 ```text
 2110471-Comp-Network-Term-Project/
 |-- backend/
-|   `-- server.py
+|   |-- server.py
+|   |-- chatbot.py       # AI chatbot (Gemini or Claude API), called by the server
+|   `-- mentions.py      # @username rule
 |-- frontend/
 |   |-- client.py        # Working terminal chat client
 |   |-- network_client.py # Real Tkinter TCP adapter
@@ -99,6 +101,7 @@ The Tkinter command should open a small demonstration window. Close it when fini
 |-- requirements.txt   # Shared Python dependencies
 |-- project_plan.md
 |-- MESSAGE_PROTOCOL.md # JSON fields and TCP framing
+|-- CHATBOT_AND_MENTIONS.md # AI chatbot and @mention features
 `-- README.md
 ```
 
@@ -137,6 +140,7 @@ After registration, choose a private conversation or group before sending text. 
 | `/leave Study` | Leave a group and stop receiving its messages. |
 | `/lobby` | Enter the public lobby, visible to every registered user. |
 | `/reply <msg_id> <text>` | Reply to a recent message in the selected conversation. |
+| `/bot <question>` | Ask the AI chatbot privately. Write `@Bot` in a chat to ask it there. |
 | `!DISCONNECT` | Disconnect. |
 
 For example, Alice types `/create Study`, Bob types `/join Study`, and they can then exchange ordinary text. Carol receives none of those messages until she explicitly joins Study. Alice can switch to `/private Bob` for messages delivered only to Alice and Bob, then `/group Study` to return to the group. Names with spaces are supported: `/private Bob Smith` or `/create Study Team`.
@@ -197,8 +201,13 @@ sent before you joined, its quote reads **Original message unavailable**.
 Leaving a group disables sending there. Closing a tab preserves its local
 messages and does not leave the group. Closing the application disconnects;
 reconnecting starts a new session without earlier message history. If the server
-disconnects, the application returns to login. The real server does not implement
-the AI chatbot yet, so real mode shows **Chatbot unavailable**.
+disconnects, the application returns to login.
+
+Type `@` to mention someone: a list of the chat's members (and `🤖 @Bot`)
+appears; pick with Up/Down and Enter, Tab, or a click. A mentioned user sees
+their name highlighted, an `@` badge on the chat in the sidebar and on its tab,
+and a notification bar with **Open**. Click **🤖 Chatbot** in the sidebar for a private AI chat, or write
+`@Bot` in any chat to let everyone there see the answer.
 
 For an offline UI demonstration with simulated messages:
 
@@ -209,6 +218,31 @@ python -m frontend.ui.app
 The older launch form, `python -m ui.app --real` from `frontend/`, also works.
 See [PERSON4_STATUS.md](PERSON4_STATUS.md) for the bug list, test evidence, and
 the remaining two-computer acceptance checklist.
+
+### Set up the AI chatbot
+
+The chatbot uses Google's Gemini API by default, and only the server computer
+needs a key. Create a free key at <https://aistudio.google.com/apikey>: sign in
+with a Google account, accept the terms, and copy the key. Before starting the
+server:
+
+```powershell
+$env:GEMINI_API_KEY = "your-key"
+python backend/server.py
+```
+
+On macOS or Linux use `export GEMINI_API_KEY="your-key"`. Alternatively, put
+`GEMINI_API_KEY=your-key` in a `.env` file in this folder (Git ignores it). The
+server then prints `[CHATBOT] Gemini gemini-3.5-flash-lite`. On the free tier,
+Google may use what is sent to the bot to improve its products, so do not send
+the bot anything private.
+
+To use Claude instead, set `CHATBOT_PROVIDER=claude` and `ANTHROPIC_API_KEY`.
+Without a key the chat still works and the bot explains how to configure it. For
+an offline demonstration, `python backend/server.py --bot echo` makes the bot
+repeat each question instead of calling the AI. See
+[CHATBOT_AND_MENTIONS.md](CHATBOT_AND_MENTIONS.md) for the models, prompt,
+settings, and privacy notes.
 
 ## Check the project without running Python on your computer
 
@@ -224,7 +258,8 @@ the repository's default branch.
 This checks behavior in GitHub's environment. It does not publish a clickable
 browser version of the Tkinter desktop UI or replace physical two-computer LAN
 acceptance. For a visual review without running anything, open
-`evidence/LOCAL_VISUAL_QA.md` and its screenshots.
+`evidence/LOCAL_VISUAL_QA.md` and its screenshots, and
+`evidence/PERSON3_VISUAL_QA.md` for the chatbot and mentions.
 
 Run the loopback integration tests:
 
@@ -232,8 +267,9 @@ Run the loopback integration tests:
 python -m unittest discover -s tests -v
 ```
 
-The suite includes terminal/server tests, real network-adapter tests, and hidden
-Tkinter integration tests. The GUI tests require Tkinter and an available desktop
+The suite includes terminal/server tests, real network-adapter tests, hidden
+Tkinter integration tests, and chatbot/mention tests that use an offline bot or
+a local fake of the Gemini or Claude API (no key or internet needed). The GUI tests require Tkinter and an available desktop
 display; they are skipped if a Tk display cannot be initialized. They do not
 replace acceptance testing on two physical computers.
 

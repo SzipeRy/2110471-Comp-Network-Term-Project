@@ -12,6 +12,9 @@ ACC_DARK = "#2459c7"
 ME = "#dbe8ff"      # my bubbles / selected row
 THEM = "#eef0f3"    # others' bubbles / hover
 BOT = "#e6f6ea"     # chatbot bubbles
+MENTION = "#fff4d6"       # bubbles that mention you, mention notifications, sidebar rows
+MENTION_TAG = "#ffd666"   # highlight behind "@you", "@" badges in the sidebar
+MENTION_DOT = "#f59e0b"   # dot on a chat tab while unread messages mention you
 ERR = "#dd3333"
 ONLINE = "#2db36a"
 
@@ -45,6 +48,21 @@ def _x_image(root, color, bg=None, size=14):
     return img
 
 
+def dot_image(root, color, bg, size=10, gap=4):
+    """A round dot with soft edges blended into bg, then a transparent gap (no image files)."""
+    img = tk.PhotoImage(master=root, width=size + gap, height=size)
+    rgb = [tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in (color, bg)]
+    r = size / 2
+    for y in range(size):
+        for x in range(size):  # share of 4x4 sample points inside the circle
+            t = sum((x + (i + .5) / 4 - r) ** 2 + (y + (j + .5) / 4 - r) ** 2 <= r * r
+                    for i in range(4) for j in range(4)) / 16
+            if t:
+                img.put("#" + "".join(f"{round(a * t + b * (1 - t)):02x}" for a, b in zip(*rgb)),
+                        to=(x, y))
+    return img
+
+
 def _add_tab_close_button(root, s):
     """Add a ✕ element to every chat tab. MainWindow handles the click."""
     root._close_imgs = imgs = (_x_image(root, MUTE), _x_image(root, INK, "#d9dde3"),
@@ -62,11 +80,15 @@ def _add_tab_close_button(root, s):
 
 
 def button(parent, text, command, primary=False, **kw):
-    b = tk.Button(parent, text=text, command=command, font=F, relief="flat", bd=0, cursor="hand2",
+    if primary and parent.tk.call("tk", "windowingsystem") == "aqua":
+        # macOS paints its own light button face and ignores bg, so white text would vanish.
+        colors = dict(fg=ACC, activeforeground=ACC_DARK, font=F_BOLD)
+    else:
+        colors = dict(fg="white" if primary else ACC, activeforeground="white" if primary else ACC, font=F)
+    b = tk.Button(parent, text=text, command=command, relief="flat", bd=0, cursor="hand2",
                   padx=10, pady=3, highlightthickness=1, highlightbackground=ACC,
-                  bg=ACC if primary else CARD, fg="white" if primary else ACC,
-                  activebackground=ACC_DARK if primary else ME,
-                  activeforeground="white" if primary else ACC, **kw)
+                  bg=ACC if primary else CARD, activebackground=ACC_DARK if primary else ME,
+                  **colors, **kw)
     b.primary = primary
     return b
 
