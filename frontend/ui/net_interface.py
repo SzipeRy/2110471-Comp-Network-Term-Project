@@ -7,11 +7,17 @@ Message dict (shared contract):
   {type, room_type: "private"|"group"|"bot", room_id, message_id, sender,
    text, reply_to, mentions, timestamp}
 The server echoes a user's own messages back, so the UI only draws what on_message delivers.
+mentions lists the canonical usernames the server found as @name in text (Person 3).
+The chatbot room is ("bot", BOT_ROOM); the AI's messages come from sender BOT_NAME,
+also when someone writes @Bot in a private or group chat.
 on_message also delivers type="system_message" for group join announcements,
 using the same room_id/message_id/text fields. These rows cannot be replied to.
 """
 from dataclasses import dataclass
 import json
+
+BOT_NAME = "Bot"       # the server's AI chatbot; a reserved username
+BOT_ROOM = "chatbot"   # room_id of each user's private chatbot room
 
 
 class NameTakenError(Exception):
