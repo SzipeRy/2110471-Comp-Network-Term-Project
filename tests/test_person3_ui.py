@@ -73,15 +73,23 @@ class MentionGuiTests(GuiTestCase):
         self.pump(lambda: ("group", "Study") in main.rooms and main.rooms[("group", "Study")].messages)
         room = main.rooms[("group", "Study")]
         self.assertEqual(main.tabs.tab(room, "text"), "#Study  @")
+        self.assertIn(str(main.mention_dot), str(main.tabs.tab(room, "image")))  # orange dot
+        self.assertIn("@", labels(main.groups_box))  # badge on the group's sidebar row
         self.assertTrue(main.mention_bar.winfo_manager())
         self.assertEqual(main.mention_lbl.cget("text"),
                          "🔔 Bob mentioned you in #Study: @alice please review the slides")
         body = next(w for w in descendants(room) if isinstance(w, tk.Text))
         self.assertEqual(body.get(*body.tag_ranges("mention_me")), "@alice")
+        bob.send_message("group", "Study", "@Alice and the demo plan")
+        self.pump(lambda: len(room.messages) == 2)
+        self.assertEqual(main.tabs.tab(room, "text"), "#Study  @2")
+        self.assertIn("@2", labels(main.groups_box))
         main.open_mention()
         self.app.update()
         self.assertIs(main.rooms[main._current_key()], room)
         self.assertEqual(main.tabs.tab(room, "text"), "#Study")
+        self.assertFalse(main.tabs.tab(room, "image"))
+        self.assertFalse([text for text in labels(main.groups_box) if text.startswith("@")])
         self.assertFalse(main.mention_bar.winfo_manager())
 
         # Typing "@" offers this chat's members and the bot; Up/Down and Enter pick one.

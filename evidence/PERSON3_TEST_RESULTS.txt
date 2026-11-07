@@ -1,4 +1,4 @@
-Person 3 (chatbot and @mentions) local CI-entrypoint validation — 2026-11-08, after adding the Gemini provider
+Person 3 (chatbot and @mentions) local CI-entrypoint validation — 2026-11-08, after the Gemini provider and the sidebar mention badge
 Environment: macOS 27.0.1 (Apple silicon), Python 3.14.9, Tk 9.0, anthropic 2.6.0; loopback TCP.
 Command: python .github/scripts/run_tests.py
 Result: 83 passed, no skips (56 earlier tests + 27 chatbot/mention tests, 4 of them with hidden Tk windows).
@@ -92,6 +92,6 @@ test_reply_menu_cancel_then_send_and_quote (test_ui_integration.GuiIntegrationTe
 test_switching_private_and_group_tabs_keeps_destinations_separate (test_ui_integration.GuiIntegrationTests.test_switching_private_and_group_tabs_keeps_destinations_separate) ... ok
 
 ----------------------------------------------------------------------
-Ran 83 tests in 33.550s
+Ran 83 tests in 24.295s
 
 OK

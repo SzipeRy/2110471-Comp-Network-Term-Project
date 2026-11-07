@@ -57,6 +57,7 @@ class MainWindow(tk.Frame):
                               lambda e: self.mention_lbl.config(wraplength=max(100, e.width - 16)))
         self.mention_key = None
         self._mention_job = None
+        self.mention_dot = T.dot_image(self, T.MENTION_DOT, T.THEM)  # on unselected (gray) tabs
         self.placeholder = tk.Label(right, text="Select a user, group or the chatbot to start chatting",
                                     font=T.F, fg=T.MUTE, bg=T.BG)
         self.placeholder.pack(expand=True)
@@ -70,20 +71,28 @@ class MainWindow(tk.Frame):
         self.render_sidebar()
 
     # ---------- sidebar ----------
-    def _row(self, parent, text, on_click, selected=False, dot=False):
-        bg = T.ME if selected else T.CARD
+    def _row(self, parent, text, on_click, selected=False, dot=False, mentions=0):
+        # A chat with unread messages that mention you gets a yellow row and an "@" badge.
+        bg = T.ME if selected else (T.MENTION if mentions else T.CARD)
         row = tk.Frame(parent, bg=bg, padx=6, pady=3, cursor="hand2")
         row.pack(fill="x", pady=1)
         if dot:
             c = tk.Canvas(row, width=8, height=8, bg=bg, highlightthickness=0)
             c.create_oval(0, 0, 7, 7, fill=T.ONLINE, outline="")
             c.pack(side="left", padx=(0, 6))
-        tk.Label(row, text=text, font=T.F, fg=T.INK, bg=bg, anchor="w").pack(side="left", fill="x")
+        badge = None
+        if mentions:  # packed before the name, so a long name cannot push it out of view
+            badge = tk.Label(row, text="@" if mentions == 1 else f"@{mentions}", font=T.F_BOLD,
+                             fg=T.INK, bg=T.MENTION_TAG, padx=5)
+            badge.pack(side="right")
+        tk.Label(row, text=text, font=T.F_BOLD if mentions else T.F, fg=T.INK, bg=bg,
+                 anchor="w").pack(side="left", fill="x")
 
         def hover(on):
             if not selected and row.winfo_exists():
                 for w in [row, *row.winfo_children()]:
-                    w.config(bg=T.THEM if on else T.CARD)
+                    if w is not badge:
+                        w.config(bg=T.THEM if on else bg)
         T.bind_tree(row, "<Enter>", lambda _e: hover(True))
         T.bind_tree(row, "<Leave>", lambda _e: hover(False))
         T.bind_tree(row, "<Button-1>", lambda _e: on_click())
@@ -94,22 +103,28 @@ class MainWindow(tk.Frame):
             for w in box.winfo_children():
                 w.destroy()
         me = self.app.username
+
+        def mentions(key):
+            room = self.rooms.get(key)
+            return room.unread_mentions if room else 0
+
         for u in self.app.users:  # R4: includes yourself
             if u == me:
                 self._row(self.users_box, f"{u} (you)", lambda: None, dot=True)
             else:
                 rid = private_room_id(me, u)
                 self._row(self.users_box, u, lambda rid=rid: self._room("private", rid, select=True),
-                          selected=cur == ("private", rid), dot=True)
+                          selected=cur == ("private", rid), dot=True, mentions=mentions(("private", rid)))
         if not self.app.groups:
             tk.Label(self.groups_box, text="No groups yet", font=T.F_SMALL, fg=T.MUTE,
                      bg=T.CARD).pack(anchor="w", padx=6)
         for g, info in sorted(self.app.groups.items()):  # R9
             mark = " ✓" if info.joined else ""
             self._row(self.groups_box, f"#{g} ({info.member_count}){mark}", lambda g=g: self.open_group(g),
-                      selected=cur == ("group", g))
+                      selected=cur == ("group", g), mentions=mentions(("group", g)))
         if self.app.client.supports_bot:
-            self._row(self.ai_box, "🤖 Chatbot", self.open_bot, selected=cur == ("bot", "chatbot"))
+            self._row(self.ai_box, "🤖 Chatbot", self.open_bot, selected=cur == ("bot", "chatbot"),
+                      mentions=mentions(("bot", "chatbot")))
         else:
             tk.Label(self.ai_box, text="Chatbot unavailable", font=T.F_SMALL,
                      fg=T.MUTE, bg=T.CARD).pack(anchor="w", padx=6)
@@ -132,11 +147,21 @@ class MainWindow(tk.Frame):
         mentioned = room.add_message(msg) and self._mentions_me(msg)
         current = self._current_key() == key
         if mentioned and not current:
-            room.unread_mention = True
-        if not current:  # unread dot, or "@" while an unread message mentions you
-            self.tabs.tab(room, text=self.titles[room] + ("  @" if room.unread_mention else "  •"))
+            room.unread_mentions += 1
+            self.render_sidebar()  # yellow row and "@" badge on this chat
+        if not current:
+            self._mark_tab(room)
         if mentioned and not (current and self.focus_displayof() is not None):
             self.show_mention(msg, key)
+
+    def _mark_tab(self, room):
+        """Unread dot, or an orange dot and "@" (with a count) while unread messages mention you."""
+        count = room.unread_mentions
+        if count:
+            self.tabs.tab(room, text=f"{self.titles[room]}  @{count if count > 1 else ''}",
+                          image=self.mention_dot, compound="left")
+        else:
+            self.tabs.tab(room, text=f"{self.titles[room]}  •", image="")
 
     # ---------- @mention notifications ----------
     def _mentions_me(self, msg):
@@ -271,8 +296,8 @@ class MainWindow(tk.Frame):
             room.hide_suggestions()
         if key:
             room = self.rooms[key]
-            room.unread_mention = False
-            self.tabs.tab(room, text=self.titles[room])  # clear unread dot / mention mark
+            room.unread_mentions = 0
+            self.tabs.tab(room, text=self.titles[room], image="")  # clear unread dot / mention mark
             if key == self.mention_key:
                 self.hide_mention()  # the mention is now in view
             room.entry.focus()

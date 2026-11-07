@@ -63,7 +63,7 @@ class ChatRoom(tk.Frame):
         self.list.pack(fill="both", expand=True)
 
         # @mention suggestions: drawn over the message window, just above the chat box
-        self.unread_mention = False
+        self.unread_mentions = 0  # messages mentioning you since you last looked at this chat
         self.suggested = []
         self.suggest_box = tk.Listbox(self, font=T.F, width=26, activestyle="none", relief="flat",
                                       bd=0, highlightthickness=1, highlightbackground=T.LINE,

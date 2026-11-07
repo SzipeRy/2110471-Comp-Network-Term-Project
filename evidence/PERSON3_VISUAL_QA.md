@@ -17,12 +17,12 @@ without the macOS title bar.
 | Reserved name | Logging in as `Bot` shows the reserved-name error before anything is sent |
 | Chatbot room | **🤖 Chatbot** opens the bot tab; "Bot is typing…" sits under the question until the answer arrives |
 | Thai answer | A five-line Thai answer wraps inside the green bot bubble |
-| Mention notification | With another tab in front, a yellow bar shows who mentioned you, where, and the text, with **Open** and ✕; the chat's tab shows `@` |
+| Mention notification | With another tab in front, a yellow bar shows who mentioned you, where, and the text, with **Open** and ✕. The chat's sidebar row turns yellow and bold with an `@` badge (`@2` after two mentions), and its tab gets an orange dot and `@2` |
 | Mention highlight | The mentioning bubble is yellow and `@Alice` has a darker yellow background; other names are bold blue |
 | Suggestions | `@` lists the chat's members and `🤖 @Bot` just above the chat box, lined up with the entry; `@b` narrows the list |
 | Mention outside the chat | "Dave is not in this chat, so they will not see this message" appears under the sender's message |
 | `@Bot` in a group | The answer quotes the question and the whole group sees it. This test answer starts with `@Alice`, so Alice sees it in yellow; an answer without a mention is green |
-| Smallest window (700×450) | The notification wraps onto three lines and no text is hidden; the bar and the suggestions fit together |
+| Smallest window (700×450) | The notification wraps onto three lines and no text is hidden; the bar and the suggestions fit together; Dave's row in the sidebar has the `@` badge for his private mention |
 | Reply and suggestions | The suggestion list stays above the divider and does not cover the reply bar |
 
 ## Fixed after the first pass
@@ -42,6 +42,10 @@ without the macOS title bar.
   button. A label would remove them, but `tests/test_ui_integration.py` expects a
   `tk.Button` there, so it was left as a button.
 
+After Zian's review, the `@` on the tab alone was too easy to miss, so a mentioned
+chat now also gets a yellow sidebar row with an `@` badge that counts mentions,
+and an orange dot on its tab. Both clear when you open the chat.
+
 Before the fixes:
 
 ![Blank Send button and framed ✕ before the fix](screenshots/person3-before-04-mention-notification.png)
@@ -56,7 +60,7 @@ Before the fixes:
 
 ![Chatbot answer in Thai](screenshots/person3-03-bot-room-answer.png)
 
-![Mention notification bar and @ tab marker](screenshots/person3-04-mention-notification.png)
+![Mention notification bar, @2 badge in the sidebar and orange dot on the tab](screenshots/person3-04-mention-notification.png)
 
 ![Mention highlight after Open](screenshots/person3-05-mention-highlight.png)
 

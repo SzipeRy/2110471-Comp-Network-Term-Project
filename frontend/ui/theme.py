@@ -12,8 +12,9 @@ ACC_DARK = "#2459c7"
 ME = "#dbe8ff"      # my bubbles / selected row
 THEM = "#eef0f3"    # others' bubbles / hover
 BOT = "#e6f6ea"     # chatbot bubbles
-MENTION = "#fff4d6"       # bubbles that mention you, mention notifications
-MENTION_TAG = "#ffd666"   # highlight behind "@you"
+MENTION = "#fff4d6"       # bubbles that mention you, mention notifications, sidebar rows
+MENTION_TAG = "#ffd666"   # highlight behind "@you", "@" badges in the sidebar
+MENTION_DOT = "#f59e0b"   # dot on a chat tab while unread messages mention you
 ERR = "#dd3333"
 ONLINE = "#2db36a"
 
@@ -44,6 +45,21 @@ def _x_image(root, color, bg=None, size=14):
     for i in range(4, size - 4):
         for x, y in ((i, i), (i + 1, i), (size - 1 - i, i), (size - 2 - i, i)):
             img.put(color, to=(x, y))
+    return img
+
+
+def dot_image(root, color, bg, size=10, gap=4):
+    """A round dot with soft edges blended into bg, then a transparent gap (no image files)."""
+    img = tk.PhotoImage(master=root, width=size + gap, height=size)
+    rgb = [tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in (color, bg)]
+    r = size / 2
+    for y in range(size):
+        for x in range(size):  # share of 4x4 sample points inside the circle
+            t = sum((x + (i + .5) / 4 - r) ** 2 + (y + (j + .5) / 4 - r) ** 2 <= r * r
+                    for i in range(4) for j in range(4)) / 16
+            if t:
+                img.put("#" + "".join(f"{round(a * t + b * (1 - t)):02x}" for a, b in zip(*rgb)),
+                        to=(x, y))
     return img
 
 

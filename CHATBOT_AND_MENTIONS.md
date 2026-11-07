@@ -141,9 +141,11 @@ tier is not), so nobody should send the bot anything private.
 - **Highlighting:** mentioned names are blue and bold. Your own name has a yellow
   background, and the whole bubble is tinted.
 - **Notifications:** when someone mentions you in a chat that is not in front
-  (or while the app is in the background), its tab shows `@` instead of the
-  unread dot, a bar such as `🔔 Bob mentioned you in #Study: …` appears with an
-  **Open** button, and the computer beeps. The bar closes after 8 seconds or
+  (or while the app is in the background), the chat's sidebar row turns yellow
+  with an `@` badge (`@2` for two mentions), its tab gets an orange dot and `@`
+  instead of the unread dot, a bar such as `🔔 Bob mentioned you in #Study: …`
+  appears with an **Open** button, and the computer beeps. Badge and dot clear
+  when you open the chat. The bar closes after 8 seconds or
   when you open that chat. The terminal client prints `[MENTION] Bob mentioned you in group: Study`.
 - **Autocomplete:** typing `@` lists the people who can read this chat, plus
   `🤖 @Bot`. Use Up/Down, then Enter or Tab (or click); Esc closes the list.

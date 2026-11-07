@@ -205,8 +205,8 @@ disconnects, the application returns to login.
 
 Type `@` to mention someone: a list of the chat's members (and `🤖 @Bot`)
 appears; pick with Up/Down and Enter, Tab, or a click. A mentioned user sees
-their name highlighted, an `@` on the chat's tab, and a notification bar with
-**Open**. Click **🤖 Chatbot** in the sidebar for a private AI chat, or write
+their name highlighted, an `@` badge on the chat in the sidebar and on its tab,
+and a notification bar with **Open**. Click **🤖 Chatbot** in the sidebar for a private AI chat, or write
 `@Bot` in any chat to let everyone there see the answer.
 
 For an offline UI demonstration with simulated messages:
