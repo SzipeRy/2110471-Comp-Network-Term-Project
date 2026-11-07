@@ -40,6 +40,7 @@ class GroupInfo:
 
 class ClientInterface:
     supports_bot = False
+    supports_group_events = False
 
     def set_handlers(self, on_message, on_users, on_groups, on_error, on_disconnect):
         """on_message(msg) · on_users([names]) · on_groups({group: GroupInfo})

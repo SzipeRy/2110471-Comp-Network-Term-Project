@@ -19,11 +19,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class Events:
     def __init__(self, client):
-        self.queues = {name: queue.Queue() for name in ("message", "users", "groups", "error", "disconnect")}
-        client.set_handlers(*(self.handler(name) for name in self.queues))
+        self.queues = {name: queue.Queue() for name in ("message", "users", "groups", "error", "disconnect", "notice")}
+        client.set_handlers(*(self.handler(name) for name in ("message", "users", "groups", "error", "disconnect")))
 
     def handler(self, name):
-        return lambda *args: self.queues[name].put(args[0] if args else None)
+        def receive(*args):
+            value = args[0] if args else None
+            target = "notice" if name == "message" and value["type"] == "system_message" else name
+            self.queues[target].put(value)
+        return receive
 
     def wait(self, name, predicate=lambda value: True, timeout=5):
         deadline = time.monotonic() + timeout
@@ -76,6 +80,51 @@ class ServerTestCase(unittest.TestCase):
 
 
 class NetworkClientTests(ServerTestCase):
+    def test_join_notices_reach_members_once_and_repeat_only_after_rejoining(self):
+        alice, a, _ = self.adapter("Alice")
+        bob, b, _ = self.adapter("บ๊อบ 😀")
+        _, outsider, _ = self.adapter("Carol")
+        alice.create_group("Study Team")
+        a.wait("groups", lambda g: "Study Team" in g)
+        bob.join_group("study team")
+        notice = a.wait("notice")
+        self.assertEqual(notice, b.wait("notice"))
+        self.assertEqual(notice["text"], "บ๊อบ 😀 joined the group")
+        self.assertEqual(notice["room_id"], "Study Team")
+        self.assertEqual(notice["sender"], "server")
+        self.assertTrue(outsider.queues["notice"].empty())
+        bob.join_group("Study Team")
+        with self.assertRaises(queue.Empty):
+            a.queues["notice"].get(timeout=0.2)
+        with self.assertRaises(queue.Empty):
+            b.queues["notice"].get(timeout=0.1)
+        bob.leave_group("Study Team")
+        b.wait("groups", lambda g: "Study Team" in g and not g["Study Team"].joined)
+        bob.join_group("Study Team")
+        again = a.wait("notice")
+        self.assertEqual(again, b.wait("notice"))
+        self.assertNotEqual(again["message_id"], notice["message_id"])
+        self.assertTrue(outsider.queues["notice"].empty())
+        # Notices are not chat messages that can be quoted or forged by clients.
+        alice.send_message("group", "Study Team", "Reply to a notice", notice["message_id"])
+        a.wait("error", lambda e: "invalid_reply" in e)
+        alice._enqueue({"type": "group_event", "room": "Study Team", "text": "Forged"})
+        a.wait("error", lambda e: "unsupported_type" in e)
+        self.assertTrue(b.queues["notice"].empty())
+
+    def test_clients_without_notice_subscription_keep_the_original_response_stream(self):
+        alice, a, _ = self.adapter("Alice")
+        alice.create_group("Study")
+        a.wait("groups", lambda g: "Study" in g)
+        legacy = socket.create_connection(self.address, timeout=5)
+        self.addCleanup(legacy.close)
+        wire.register(legacy, "Legacy")
+        wire.send(legacy, {"type": "join_group", "room": "Study"})
+        self.assertEqual(wire.receive_message(legacy)["type"], "chat_selected")
+        a.wait("notice", lambda n: n["username"] == "Legacy")
+        alice.send_message("group", "Study", "Still compatible")
+        self.assertEqual(wire.receive_message(legacy)["text"], "Still compatible")
+
     def test_unicode_private_messages_replies_and_own_echo_exclude_outsider(self):
         alice, a, name = self.adapter("  Alice-Smith  ")
         bob, b, _ = self.adapter("บ๊อบ 😀")

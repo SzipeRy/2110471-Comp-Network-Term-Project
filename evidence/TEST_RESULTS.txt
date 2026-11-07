@@ -1,12 +1,9 @@
-Person 4 validation — 2026-11-07
-Baseline: 49860ac4344dc79075a53d0a15a98a69be42906c
-Environment: Windows, Python 3.14.5, local loopback TCP.
-Command: python -m unittest discover -s tests -v
-Result: 53 passed; no skipped tests. Includes 10 hidden Tkinter tests.
-git diff --check: passed. Root and legacy frontend imports: passed.
-Delivery patch: applied to a fresh baseline and reproduced every source file.
-Local visual checks: passed; see evidence/LOCAL_VISUAL_QA.md and screenshots.
-Physical two-computer LAN acceptance: not run. Chatbot integration: blocked.
+Person 4 local CI-entrypoint validation — 2026-11-07
+Environment: Windows, Python 3.14.5; loopback TCP.
+Command: python .github/scripts/run_tests.py
+Result: 56 passed, no skips; includes 11 Tkinter integration tests.
+Group join notices: membership privacy, duplicate joins, legacy compatibility, and GUI rows verified.
+Physical two-computer LAN acceptance remains unperformed.
 
 test_client_cannot_forge_participants_recipients_or_sender (test_chat.BroadcastChatTests.test_client_cannot_forge_participants_recipients_or_sender) ... ok
 test_cross_conversation_reply_is_rejected_without_leaking_text (test_chat.BroadcastChatTests.test_cross_conversation_reply_is_rejected_without_leaking_text) ... ok
@@ -43,10 +40,12 @@ test_username_length_and_unicode_are_preserved_for_every_client (test_chat.Broad
 test_older_server_reports_restart_instead_of_retrying_username (test_chat.RegistrationCompatibilityTests.test_older_server_reports_restart_instead_of_retrying_username) ... ok
 test_fragmented_server_frames_are_decoded (test_network_client.FragmentedServerTests.test_fragmented_server_frames_are_decoded) ... ok
 test_unresponsive_registration_times_out_and_can_be_closed (test_network_client.FragmentedServerTests.test_unresponsive_registration_times_out_and_can_be_closed) ... ok
+test_clients_without_notice_subscription_keep_the_original_response_stream (test_network_client.NetworkClientTests.test_clients_without_notice_subscription_keep_the_original_response_stream) ... ok
 test_concurrent_sends_keep_frames_intact (test_network_client.NetworkClientTests.test_concurrent_sends_keep_frames_intact) ... ok
 test_group_discovery_hides_names_until_join_and_refreshes_after_leave (test_network_client.NetworkClientTests.test_group_discovery_hides_names_until_join_and_refreshes_after_leave) ... ok
 test_intentional_close_is_silent_and_stops_workers (test_network_client.NetworkClientTests.test_intentional_close_is_silent_and_stops_workers) ... ok
 test_invalid_reply_and_large_message_report_errors_without_breaking_connection (test_network_client.NetworkClientTests.test_invalid_reply_and_large_message_report_errors_without_breaking_connection) ... ok
+test_join_notices_reach_members_once_and_repeat_only_after_rejoining (test_network_client.NetworkClientTests.test_join_notices_reach_members_once_and_repeat_only_after_rejoining) ... ok
 test_online_list_updates_after_connect_and_abrupt_close (test_network_client.NetworkClientTests.test_online_list_updates_after_connect_and_abrupt_close) ... ok
 test_registration_errors_allow_retry_and_preserve_canonical_name (test_network_client.NetworkClientTests.test_registration_errors_allow_retry_and_preserve_canonical_name) ... ok
 test_server_shutdown_notifies_once_and_client_can_reconnect (test_network_client.NetworkClientTests.test_server_shutdown_notifies_once_and_client_can_reconnect) ... ok
@@ -54,6 +53,7 @@ test_unicode_private_messages_replies_and_own_echo_exclude_outsider (test_networ
 test_close_and_reopen_tab_preserves_long_text_and_receives_new_messages (test_ui_integration.GuiIntegrationTests.test_close_and_reopen_tab_preserves_long_text_and_receives_new_messages) ... ok
 test_duplicate_name_can_retry_and_disconnect_returns_to_login (test_ui_integration.GuiIntegrationTests.test_duplicate_name_can_retry_and_disconnect_returns_to_login) ... ok
 test_emoji_only_and_thai_text_round_trip_both_directions (test_ui_integration.GuiIntegrationTests.test_emoji_only_and_thai_text_round_trip_both_directions) ... ok
+test_group_join_notices_appear_as_system_rows_for_self_and_other_members (test_ui_integration.GuiIntegrationTests.test_group_join_notices_appear_as_system_rows_for_self_and_other_members) ... ok
 test_group_privacy_join_missing_quote_and_leave (test_ui_integration.GuiIntegrationTests.test_group_privacy_join_missing_quote_and_leave) ... ok
 test_invalid_username_and_port_stay_on_login_without_connecting (test_ui_integration.GuiIntegrationTests.test_invalid_username_and_port_stay_on_login_without_connecting) ... ok
 test_leaving_group_closes_emoji_picker_and_locks_input (test_ui_integration.GuiIntegrationTests.test_leaving_group_closes_emoji_picker_and_locks_input) ... ok
@@ -63,6 +63,6 @@ test_reply_menu_cancel_then_send_and_quote (test_ui_integration.GuiIntegrationTe
 test_switching_private_and_group_tabs_keeps_destinations_separate (test_ui_integration.GuiIntegrationTests.test_switching_private_and_group_tabs_keeps_destinations_separate) ... ok
 
 ----------------------------------------------------------------------
-Ran 53 tests in 27.616s
+Ran 56 tests in 25.196s
 
 OK

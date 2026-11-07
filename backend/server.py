@@ -24,6 +24,7 @@ groups = {DEFAULT_ROOM: {"name": DEFAULT_ROOM, "id": uuid.uuid4().hex, "members"
 active_chats = {}
 private_rooms = {}
 reply_references = OrderedDict()
+group_event_clients = set()
 clients_lock = threading.Lock()
 
 
@@ -92,7 +93,7 @@ def normalized_name(value, limit, code, label):
     return name
 
 
-def register_client(conn, requested_name):
+def register_client(conn, requested_name, group_events=False):
     name = normalized_name(requested_name, MAX_USERNAME_LENGTH, "invalid_username", "Username")
     if name.casefold() == "server":
         raise RequestError("invalid_username", "The username 'server' is reserved")
@@ -111,6 +112,8 @@ def register_client(conn, requested_name):
                 raise RequestError("username_taken", "That username is already in use; choose another")
             usernames[conn] = name
             groups[DEFAULT_ROOM]["members"].add(conn)
+            if group_events:
+                group_event_clients.add(conn)
         response = server_message("registered", "server", f"Registered as {name}")
         response["username"] = name
         conn.sendall(encode_message(response))
@@ -119,6 +122,7 @@ def register_client(conn, requested_name):
 def remove_client(conn):
     with clients_lock:
         clients.pop(conn, None)
+        group_event_clients.discard(conn)
         usernames.pop(conn, None)
         active_chats.pop(conn, None)
         for key, group in list(groups.items()):
@@ -238,6 +242,7 @@ def control_response(conn, message):
 
 
 def handle_control(conn, message):
+    notice = None
     with clients_lock:
         send_lock = clients.get(conn)
     if send_lock is None:
@@ -250,8 +255,36 @@ def handle_control(conn, message):
             if message.get("type") in ("select_chat", "create_group", "join_group"):
                 # A failed destination change must never send later text to an old chat.
                 active_chats.pop(conn, None)
+            new_member = False
+            if message.get("type") == "join_group":
+                _, group = get_group(message.get("room"))
+                new_member = conn not in group["members"]
             response = control_response(conn, message)
+            if new_member:
+                _, group = get_group(response["room"])
+                event = server_message("group_event", "server",
+                                       f"{usernames[conn]} joined the group", group["name"])
+                event.update(room_type="group", event="member_joined", username=usernames[conn])
+                recipients = [(s, clients[s]) for s in group["members"]
+                              if s in clients and s in group_event_clients]
+                notice = (event, ("group", group["id"]), recipients)
         conn.sendall(encode_message(response))
+    # Release the requester's lock before delivering to any other recipient.
+    if notice is not None:
+        deliver_group_event(*notice)
+
+
+def deliver_group_event(event, context, recipients):
+    frame = encode_message(event)
+    for recipient, send_lock in recipients:
+        try:
+            with send_lock:
+                with clients_lock:
+                    allowed = recipient in group_event_clients and authorized(recipient, context)
+                if allowed:
+                    recipient.sendall(frame)
+        except OSError:
+            remove_client(recipient)
 
 
 def resolve_chat(conn, message):
@@ -338,7 +371,7 @@ def handle_client(conn, addr):
                 if kind == "disconnect":
                     break
                 if kind == "register":
-                    register_client(conn, message.get("username"))
+                    register_client(conn, message.get("username"), message.get("group_events") is True)
                     continue
                 with clients_lock:
                     registered = conn in usernames

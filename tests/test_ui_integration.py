@@ -81,6 +81,35 @@ class GuiIntegrationTests(support.ServerTestCase):
         self.pump(lambda: len(room.messages) == 3)
         self.assertFalse(self.showerror.called)
 
+    def test_group_join_notices_appear_as_system_rows_for_self_and_other_members(self):
+        bob, b, _ = self.adapter("Bob")
+        carol, c, _ = self.adapter("Carol")
+        _, outsider, _ = self.adapter("Outsider")
+        bob.create_group("Study")
+        b.wait("groups", lambda g: "Study" in g)
+        self.login("Alice")
+        self.pump(lambda: "Study" in self.app.groups)
+        self.app.main.open_group("Study")
+        room = self.app.main.rooms[("group", "Study")]
+        room.join_btn.invoke()
+        self.pump(lambda: len(room.system_messages) == 1)
+        first = next(iter(room.system_messages.values()))
+        self.assertEqual(first["text"], "Alice joined the group")
+        self.assertEqual(first["message_id"], b.wait("notice")["message_id"])
+        carol.join_group("Study")
+        self.pump(lambda: len(room.system_messages) == 2)
+        labels = [w.cget("text") for w in descendants(room) if isinstance(w, tk.Label)]
+        self.assertEqual(labels.count("Alice joined the group"), 1)
+        self.assertEqual(labels.count("Carol joined the group"), 1)
+        self.assertNotIn("You joined the group", labels)
+        self.assertEqual(room.messages, {})  # system notices are not replyable chats
+        self.assertTrue(outsider.queues["notice"].empty())
+        carol.join_group("Study")
+        c.wait("notice", lambda n: n["username"] == "Carol")
+        self.app.update()
+        self.assertEqual(len(room.system_messages), 2)
+        self.assertFalse(self.showerror.called)
+
     def test_group_privacy_join_missing_quote_and_leave(self):
         bob, events, _ = self.adapter("Bob")
         bob.create_group("Study")

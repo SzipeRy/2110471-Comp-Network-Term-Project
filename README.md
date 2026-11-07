@@ -184,6 +184,11 @@ every registered user. Group member names are shown only after joining; outsider
 see the group name and member count. Online users, group discovery, and joined
 group membership refresh approximately every two seconds.
 
+When someone joins a group, its members see a system message such as **Bob joined
+the group** inside that group's chat. The new member sees it too. Clicking Join
+again or reopening a tab does not repeat it. Restart the server and clients
+after installing this update so group join announcements are supported.
+
 Right-click a message and choose **Reply**; press the reply bar's **X** to cancel.
 Use the emoji button to insert an emoji at the input cursor, then press **Send**
 or Enter. Messages appear when echoed by the server. If a referenced message was

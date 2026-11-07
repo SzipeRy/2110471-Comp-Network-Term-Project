@@ -10,6 +10,7 @@ from .net_interface import ClientInterface, GroupInfo, NameTakenError, private_p
 
 class MockClient(ClientInterface):
     supports_bot = True
+    supports_group_events = True
     def __init__(self):
         self.me = None
         self.users = ["Bob", "Carol"]
@@ -64,7 +65,12 @@ class MockClient(ClientInterface):
     def join_group(self, name):
         if self.me not in self.groups.get(name, []):
             self.groups[name].append(self.me)
-        self._push_lists()
+            self._push_lists()
+            notice = self._msg("group", name, "server", f"{self.me} joined the group")
+            notice.update(type="system_message", event="member_joined", username=self.me)
+            self.on_message(notice)
+        else:
+            self._push_lists()
 
     def leave_group(self, name):
         members = self.groups.get(name)

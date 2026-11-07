@@ -29,6 +29,7 @@ class _Session:
 
 
 class NetworkClient(ClientInterface):
+    supports_group_events = True
     def __init__(self, refresh_interval=2.0, connect_timeout=5.0):
         self.refresh_interval = max(0.05, refresh_interval)
         self.connect_timeout = connect_timeout
@@ -52,7 +53,7 @@ class NetworkClient(ClientInterface):
             generation = self._generation
         conn = socket.create_connection((host, port), timeout=self.connect_timeout)
         try:
-            wire.send(conn, {"type": "register", "username": username})
+            wire.send(conn, {"type": "register", "username": username, "group_events": True})
             response = wire.receive_message(conn)
             if response.get("type") == "error":
                 error = NameTakenError if response.get("code") == "username_taken" else ConnectionError
@@ -193,7 +194,16 @@ class NetworkClient(ClientInterface):
         kind = message["type"]
         with session.lock:
             session.pending.discard((kind, message.get("room") if kind == "group_members" else None))
-        if kind == "chat_message":
+        if kind == "group_event":
+            if message["event"] != "member_joined" or message["room_type"] != "group":
+                raise ValueError("Unsupported group event")
+            self._emit(session, self.on_message, {
+                "type": "system_message", "room_type": "group", "room_id": message["room"],
+                "message_id": message["msg_id"], "sender": "server", "text": message["text"],
+                "reply_to": None, "timestamp": message["timestamp"], "mentions": [],
+                "event": message["event"], "username": message["username"],
+            })
+        elif kind == "chat_message":
             room_type = message["room_type"]
             room = message["room"]
             if room_type == "private":

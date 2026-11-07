@@ -1,13 +1,14 @@
 # Person 4 implementation and acceptance checklist
 
 Reviewed baseline: main commit `49860ac4344dc79075a53d0a15a98a69be42906c`.
-Implementation date: 2026-11-07. No server wire-format changes were required.
+Implementation date: 2026-11-07. The original framing and chat fields remain
+supported; optional group-join event subscriptions were added.
 
 ## Current status
 
 **Core Person 4 implementation is complete.** All 12 functional/visual cases
-below have now been checked locally. The automated suite has 53 passing tests,
-including 10 real Tkinter integration tests. Visible desktop checks also cover
+below have now been checked locally. The automated suite has 56 passing tests,
+including 11 real Tkinter integration tests. Visible desktop checks also cover
 scrolling, emoji, reply controls, and tab closing/reopening.
 
 **Physical LAN acceptance is still one outstanding release task.** Local tests
@@ -29,6 +30,9 @@ separate team dependencies, listed at the end.
   Group counts and joined state are independent of whether names are available.
 - Existing reply controls, local quoted-message display, missing-original
   placeholders, emoji insertion, and UTF-8 transmission connected to real TCP.
+- Server-confirmed join notices in each group's chat log, including the joining
+  user's own view. Repeated joins do not duplicate the notice; outsiders do not
+  receive it. Notices are separate from replyable messages.
 - Sending disabled after leaving; the public lobby has no Leave button.
 - Unexpected disconnect returns to login. Intentional close is silent and
   stops workers. Real mode marks the chatbot unavailable; mock mode still works.
@@ -79,7 +83,7 @@ disconnect recovery. GUI tests require Tkinter and an available desktop display.
 The local test run is recorded in [evidence/TEST_RESULTS.txt](evidence/TEST_RESULTS.txt)
 and in `TEST_RESULTS.txt` in the download delivery.
 Automated tests run on one Windows computer using loopback; no physical LAN
-acceptance result is claimed. The latest run has 53 tests passed, no skips.
+acceptance result is claimed. The latest run has 56 tests passed, no skips.
 See [local visual evidence](evidence/LOCAL_VISUAL_QA.md) for screenshots and the
 observed desktop results.
 

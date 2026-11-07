@@ -180,6 +180,39 @@ The `group_members` response includes `room` and a sorted `members` array. The r
 
 Only the requester receives a `member_list` envelope with `members`, such as `["Alice", "Bob"]`. It includes the requester, preserves registered spelling, sorts by `casefold()`, and excludes unregistered connections. This public list reveals online names, not any private/group message contents. Requesting it before registration returns `registration_required`.
 
+## Group join announcements
+
+Clients can include `"group_events": true` in their registration request to
+subscribe to group join announcements. The desktop adapter and interactive
+terminal opt in. Clients omitting this option retain the original response
+stream. After a successful `join_group` that adds a new member, the server sends
+the normal `chat_selected` confirmation first to the joining client, then sends
+this event to subscribed members of that group, including the new member:
+
+```json
+{
+  "type": "group_event",
+  "room_type": "group",
+  "room": "Study",
+  "msg_id": "server-generated-event-id",
+  "sender_id": "server",
+  "text": "Bob joined the group",
+  "reply_to": null,
+  "timestamp": "2026-11-07T07:30:01.123+00:00",
+  "event": "member_joined",
+  "username": "Bob"
+}
+```
+
+The username and group name use server-confirmed spelling. Existing members
+pressing Join again, selecting/reopening a room, group discovery, and list
+refreshes do not emit events. Leaving and joining again emits a new event.
+Outsiders and members who have left do not receive the event. Events are not
+stored in the reply-reference index and cannot be quoted as chat messages.
+The desktop maps them to non-replyable `system_message` rows in the group log.
+There is no announcement history download and no new event for automatic lobby
+membership during registration.
+
 ## Replies
 
 `reply_to` must be `null` or a 1-128 character string. The server keeps the last 10,000 accepted message IDs and their conversation contexts, without storing message bodies. A reply must refer to an ID in that index and the same group instance or private session. Unknown, expired, and cross-conversation IDs all return `invalid_reply` without broadcasting the reply text. Recreating a deleted group or reconnecting to a private peer does not reuse the old context. The reply receives a new message ID.

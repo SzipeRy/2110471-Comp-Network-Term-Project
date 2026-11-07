@@ -13,11 +13,13 @@ client using `python -m frontend.ui.app --real`.
 - Online-user and group refresh, group create/join/leave, and member names shown
   only for groups the client has joined.
 - Reply selection/cancellation, quote display, and unavailable-original fallback.
+- Server-confirmed group join announcements in the chat log, delivered only to
+  group members, without duplicate notices for repeated joins or room selection.
 - Emoji picker and UTF-8 Thai/emoji handling, including emoji-only bubble sizing
   and popup cleanup when closing a tab or leaving a group.
 - Unicode username validation and private conversation keys that preserve spaces
   and punctuation.
-- Terminal, network-adapter, and Tkinter integration coverage: 53 tests passed
+- Terminal, network-adapter, and Tkinter integration coverage: 56 tests passed
   locally on Windows/Python 3.14.5; native desktop checks and screenshots included.
 - GitHub Actions workflow that runs the suite on a hosted Windows runner,
   rejects skipped GUI tests, and uploads a detailed test log.
@@ -39,13 +41,14 @@ client using `python -m frontend.ui.app --real`.
 
 ## Validation and evidence
 
-- Local suite: `python -m unittest discover -s tests -v` — 53 passed, no skips.
+- Local suite: `python -m unittest discover -s tests -v` — 56 passed, no skips.
 - Hosted CI: see this branch's **Person 4 tests** run in the repository's Actions
   tab; local results do not establish the outcome of the hosted run.
 - [Recorded local test results](evidence/TEST_RESULTS.txt).
 - [Local visual checks and screenshots](evidence/LOCAL_VISUAL_QA.md).
 - [Detailed Person 4 status and acceptance cases](PERSON4_STATUS.md).
 
-The server wire contract is unchanged. This branch connects the desktop UI to
-the existing server; it does not add authenticated accounts, TLS, or persistent
-message history.
+The original framing and chat contract remain supported. Join announcements add
+an optional `group_events` registration flag and a `group_event` envelope, while
+clients omitting the flag retain their previous response stream. This branch
+does not add authenticated accounts, TLS, or persistent message history.

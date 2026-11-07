@@ -16,6 +16,7 @@ class ChatRoom(tk.Frame):
         super().__init__(master, bg=T.CARD)
         self.app, self.room_type, self.room_id = app, room_type, room_id
         self.messages = {}      # message_id -> msg (for reply quotes)
+        self.system_messages = {}  # server event IDs, separate from replyable chat
         self.reply_to = None
         self.typing_row = None
         self.emoji_picker = None
@@ -71,7 +72,8 @@ class ChatRoom(tk.Frame):
         exists = info is not None
         joined = exists and info.joined
         if self.joined is not None and joined != self.joined:
-            self.add_system("You joined the group" if joined else "You left the group")
+            if not joined or not self.app.client.supports_group_events:
+                self.add_system("You joined the group" if joined else "You left the group")
         was_member = self.joined is not None and (self.joined or getattr(self, "_left", False))
         self._left = was_member and not joined
         self.joined = joined
@@ -127,6 +129,12 @@ class ChatRoom(tk.Frame):
         tk.Label(self.list.inner, text=text, font=T.F_SMALL, fg=T.MUTE, bg=T.CARD).pack(pady=(8, 4))
 
     def add_message(self, msg):
+        if msg["type"] == "system_message":
+            if msg["message_id"] not in self.system_messages:
+                self.system_messages[msg["message_id"]] = msg
+                self.add_system(msg["text"])
+                self.list.scroll_to_end()
+            return
         if msg["message_id"] in self.messages:
             return
         self.messages[msg["message_id"]] = msg
