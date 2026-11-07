@@ -209,6 +209,16 @@ their name highlighted, an `@` on the chat's tab, and a notification bar with
 **Open**. Click **🤖 Chatbot** in the sidebar for a private AI chat, or write
 `@Bot` in any chat to let everyone there see the answer.
 
+For an offline UI demonstration with simulated messages:
+
+```powershell
+python -m frontend.ui.app
+```
+
+The older launch form, `python -m ui.app --real` from `frontend/`, also works.
+See [PERSON4_STATUS.md](PERSON4_STATUS.md) for the bug list, test evidence, and
+the remaining two-computer acceptance checklist.
+
 ### Set up the AI chatbot
 
 Only the server computer needs a Claude API key. Before starting the server:
@@ -225,16 +235,6 @@ it. For an offline demonstration, `python backend/server.py --bot echo` makes
 the bot repeat each question instead of calling the AI. See
 [CHATBOT_AND_MENTIONS.md](CHATBOT_AND_MENTIONS.md) for the model, prompt,
 settings, and privacy notes.
-
-For an offline UI demonstration with simulated messages:
-
-```powershell
-python -m frontend.ui.app
-```
-
-The older launch form, `python -m ui.app --real` from `frontend/`, also works.
-See [PERSON4_STATUS.md](PERSON4_STATUS.md) for the bug list, test evidence, and
-the remaining two-computer acceptance checklist.
 
 ## Check the project without running Python on your computer
 
