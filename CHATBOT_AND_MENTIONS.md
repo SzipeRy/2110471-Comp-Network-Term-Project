@@ -164,7 +164,7 @@ The UI uses the same rule only to locate the names for highlighting
 | `frontend/network_client.py` | Bot room enabled; server `mentions` passed to the UI |
 | `frontend/client.py` | `/bot` command, bot room label, `[MENTION]` notice |
 | `frontend/ui/mentions.py` | New: highlighting spans and suggestions |
-| `frontend/ui/chat_room.py`, `main_window.py`, `theme.py`, `login.py`, `mock_client.py`, `net_interface.py` | Highlighting, notification bar, tab marker, autocomplete, typing indicator, privacy hint, reserved name, mock mentions |
+| `frontend/ui/chat_room.py`, `main_window.py`, `theme.py`, `login.py`, `mock_client.py`, `net_interface.py` | Highlighting, notification bar, tab marker, autocomplete, typing indicator, privacy hint, reserved name, mock mentions, readable primary buttons on macOS |
 
 ## Tests
 
@@ -177,6 +177,9 @@ against a local fake Messages API that records each request.
 | `tests/test_mentions.py` | Rule examples (case, longest name, Thai/emoji, emails), server/UI parity, server-derived and unforgeable `mentions`, mentions never add recipients, adapter, terminal notice |
 | `tests/test_chatbot.py` | Private bot room and history, `@Bot` in groups and private chats, privacy, reserved name, validation, terminal `/bot`, exact Claude request (model, effort, fallbacks, text-only history), API errors, refusals, `bot_busy` |
 | `tests/test_person3_ui.py` | Hidden Tk windows: highlight, `@` tab marker, notification bar, autocomplete (also Thai and emoji), privacy hint, typing indicator, one question at a time, reserved name at login |
+
+Screenshots of each state, taken from the real app on macOS, are in
+[evidence/PERSON3_VISUAL_QA.md](evidence/PERSON3_VISUAL_QA.md).
 
 ## Presentation notes: protocols (R1)
 

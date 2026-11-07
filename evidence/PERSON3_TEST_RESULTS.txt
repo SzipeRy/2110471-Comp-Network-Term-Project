@@ -1,9 +1,10 @@
-Person 3 (chatbot and @mentions) local CI-entrypoint validation — 2026-11-07
-Environment: macOS (Apple silicon), Python 3.14.9, Tk 9.0, anthropic 2.6.0; loopback TCP.
+Person 3 (chatbot and @mentions) local CI-entrypoint validation — 2026-11-07, after the macOS visual fixes
+Environment: macOS 27.0.1 (Apple silicon), Python 3.14.9, Tk 9.0, anthropic 2.6.0; loopback TCP.
 Command: python .github/scripts/run_tests.py
 Result: 80 passed, no skips (56 earlier tests + 24 chatbot/mention tests, 4 of them with hidden Tk windows).
 No real API key or internet: the server used the offline echo bot or a local fake Claude Messages API.
 A live Claude answer and physical two-computer acceptance were not part of this run.
+Screenshots of the visible app: evidence/PERSON3_VISUAL_QA.md.
 
 test_client_cannot_forge_participants_recipients_or_sender (test_chat.BroadcastChatTests.test_client_cannot_forge_participants_recipients_or_sender) ... ok
 test_cross_conversation_reply_is_rejected_without_leaking_text (test_chat.BroadcastChatTests.test_cross_conversation_reply_is_rejected_without_leaking_text) ... ok
@@ -87,6 +88,6 @@ test_reply_menu_cancel_then_send_and_quote (test_ui_integration.GuiIntegrationTe
 test_switching_private_and_group_tabs_keeps_destinations_separate (test_ui_integration.GuiIntegrationTests.test_switching_private_and_group_tabs_keeps_destinations_separate) ... ok
 
 ----------------------------------------------------------------------
-Ran 80 tests in 27.371s
+Ran 80 tests in 28.255s
 
 OK

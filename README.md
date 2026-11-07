@@ -250,7 +250,8 @@ the repository's default branch.
 This checks behavior in GitHub's environment. It does not publish a clickable
 browser version of the Tkinter desktop UI or replace physical two-computer LAN
 acceptance. For a visual review without running anything, open
-`evidence/LOCAL_VISUAL_QA.md` and its screenshots.
+`evidence/LOCAL_VISUAL_QA.md` and its screenshots, and
+`evidence/PERSON3_VISUAL_QA.md` for the chatbot and mentions.
 
 Run the loopback integration tests:
 
