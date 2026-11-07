@@ -1,6 +1,6 @@
 ﻿# TCP JSON message protocol
 
-`backend/server.py` and the terminal client `frontend/client.py` support registered users, private conversations, and group chats. The Tkinter UI still uses its separate mock client.
+`backend/server.py`, the terminal client `frontend/client.py`, and the Tkinter adapter `frontend/network_client.py` support registered users, private conversations, and group chats. Launch the real UI with `python -m frontend.ui.app --real`; its default mode remains an offline mock demonstration.
 
 ## Framing and limits
 
@@ -223,4 +223,26 @@ The server derives recipients from its own connection and membership registries.
 
 These permissions govern delivery between connected clients. The transport is raw TCP, without TLS or authenticated persistent accounts. The server operator controls the server process. Group creation/joining is open, while reading and sending require membership.
 
-The Tkinter UI remains on its mock backend. Its contract uses `room_type`, `room_id`, `message_id`, and `sender`; a future real network adapter must map `room` to `room_id`, `msg_id` to `message_id`, and `sender_id` to `sender`. Chatbot integration, persistent accounts/history, and invitation-only groups remain future work.
+The Tkinter adapter maps `msg_id` to `message_id`, `sender_id` to `sender`, and group
+`room` to `room_id`. For private messages, the UI uses a JSON-encoded pair of
+canonical usernames as its local tab key; the adapter constructs it from the
+server-derived `participants`. Outgoing private requests address the peer's
+username, never that local key or the server's opaque session ID. Server reply
+validation continues to use the live conversation context.
+
+The UI receives `GroupInfo(joined, member_count, members)` values. `members` is
+`None` when names are unavailable, including groups the user has not joined.
+The adapter polls `member_list` and `group_list` every two seconds, then requests
+`group_members` only for joined groups. Successful create/join/leave responses
+also update the local membership display. There is no new server push protocol.
+
+All post-registration writes use a single background writer, and a separate
+receiver performs exact-length reads and invokes callbacks. Tk widgets are
+updated through the application's queue on the Tk main thread. Quotes use only
+messages received in that local tab; unavailable originals have a placeholder.
+The client does not manufacture IDs or display optimistic duplicates.
+
+Chatbot integration, persistent accounts/history, and invitation-only groups
+remain future work. Mention highlighting retains the existing `@word` matching;
+mention behavior for usernames containing spaces or punctuation still needs
+Person 3's agreed rules.

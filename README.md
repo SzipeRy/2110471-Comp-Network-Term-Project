@@ -2,6 +2,10 @@
 
 Python TCP socket chat project with a terminal client and a separate Tkinter desktop frontend.
 
+See [CHANGE_SUMMARY.md](CHANGE_SUMMARY.md) for the desktop networking features
+implemented in this branch, validation results, and work that remains blocked
+or requires physical two-computer acceptance.
+
 ## Prerequisites
 
 - Python 3.10 or newer (the setup has been verified with Python 3.14).
@@ -86,7 +90,8 @@ The Tkinter command should open a small demonstration window. Close it when fini
 |   `-- server.py
 |-- frontend/
 |   |-- client.py        # Working terminal chat client
-|   `-- ui/              # Tkinter UI (currently uses a mock client)
+|   |-- network_client.py # Real Tkinter TCP adapter
+|   `-- ui/              # Tkinter UI with real and mock modes
 |-- tests/
 |   `-- test_chat.py     # TCP chat, routing, and permission tests
 |-- .venv/             # Local environment; excluded from Git
@@ -152,13 +157,80 @@ The server listens on all IPv4 interfaces by default. If Windows prompts, allow 
 
 The protocol uses a 64-byte, space-padded decimal length followed by a UTF-8 JSON object in both directions. The entire JSON body is limited to 1 MiB. Chat messages contain `type`, `room_type`, `room`, `msg_id`, `sender_id`, `text`, `reply_to`, and `timestamp`; private broadcasts also contain server-derived `participants`. The server assigns identity, message IDs, UTC timestamps, and permitted recipients. Replies must reference a recent message in the same conversation. See [MESSAGE_PROTOCOL.md](MESSAGE_PROTOCOL.md) for the complete JSON contract, control requests, and permission rules. Restart both server and clients after updating.
 
-Private and group routing are implemented in the terminal client. The Tkinter UI still uses its mock client and is not connected to this implementation.
+Private and group routing work in both the terminal client and the real Tkinter frontend.
+
+## Run the desktop chat
+
+Start the server from the repository root:
+
+```powershell
+python backend/server.py
+```
+
+In a separate terminal, from the same repository root:
+
+```powershell
+python -m frontend.ui.app --real
+```
+
+Enter `127.0.0.1`, port `5050`, and your username for same-computer testing.
+On another computer, enter the server computer's LAN IPv4 address instead. Each
+computer needs its own Python environment and the same project version. Allow
+Python through the server's private-network firewall when prompted.
+
+Click an online user to open a private tab. Use **+ New / join group** to create
+or join groups, then click a group in the sidebar. The public `lobby` includes
+every registered user. Group member names are shown only after joining; outsiders
+see the group name and member count. Online users, group discovery, and joined
+group membership refresh approximately every two seconds.
+
+Right-click a message and choose **Reply**; press the reply bar's **X** to cancel.
+Use the emoji button to insert an emoji at the input cursor, then press **Send**
+or Enter. Messages appear when echoed by the server. If a referenced message was
+sent before you joined, its quote reads **Original message unavailable**.
+
+Leaving a group disables sending there. Closing a tab preserves its local
+messages and does not leave the group. Closing the application disconnects;
+reconnecting starts a new session without earlier message history. If the server
+disconnects, the application returns to login. The real server does not implement
+the AI chatbot yet, so real mode shows **Chatbot unavailable**.
+
+For an offline UI demonstration with simulated messages:
+
+```powershell
+python -m frontend.ui.app
+```
+
+The older launch form, `python -m ui.app --real` from `frontend/`, also works.
+See [PERSON4_STATUS.md](PERSON4_STATUS.md) for the bug list, test evidence, and
+the remaining two-computer acceptance checklist.
+
+## Check the project without running Python on your computer
+
+Commit the source files, including `.github/`, to a GitHub branch. The **Person 4
+tests** workflow runs automatically on pushes and pull requests using a
+GitHub-hosted Windows computer and Python 3.14. Open the repository's **Actions**
+tab, select the latest **Person 4 tests** run, and inspect the **chat-tests** job.
+The summary reports test counts; the **person4-test-results** artifact contains
+the detailed log. Skipped GUI tests count as a failure, so a green run includes
+actual Tkinter checks. The workflow also supports manual dispatch once it is on
+the repository's default branch.
+
+This checks behavior in GitHub's environment. It does not publish a clickable
+browser version of the Tkinter desktop UI or replace physical two-computer LAN
+acceptance. For a visual review without running anything, open
+`evidence/LOCAL_VISUAL_QA.md` and its screenshots.
 
 Run the loopback integration tests:
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+The suite includes terminal/server tests, real network-adapter tests, and hidden
+Tkinter integration tests. The GUI tests require Tkinter and an available desktop
+display; they are skipped if a Tk display cannot be initialized. They do not
+replace acceptance testing on two physical computers.
 
 ## Working as a team
 

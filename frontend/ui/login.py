@@ -1,6 +1,7 @@
 import socket
 import threading
 import tkinter as tk
+import unicodedata
 
 from .net_interface import NameTakenError
 from . import theme as T
@@ -48,22 +49,35 @@ class LoginFrame(tk.Frame):
         T.button(row, "Quit", app.close).pack(side="left", padx=6)
 
     def connect(self):
-        name = self.name.get().strip()
-        if not name or not name.replace("_", "").isalnum():
-            self._show("Username: letters, digits and _ only", error=True)
+        if self.btn.cget("state") == "disabled":
             return
+        name = unicodedata.normalize("NFC", self.name.get().strip())
+        if not 1 <= len(name) <= 20 or not name.isprintable() or name.casefold() == "server":
+            self._show("Username: 1–20 printable characters; 'server' is reserved", error=True)
+            return
+        try:
+            port = int(self.port.get())
+            if not 1 <= port <= 65535:
+                raise ValueError
+        except ValueError:
+            self._show("Port must be a number from 1 to 65535", error=True)
+            return
+        host = self.host.get().strip()
         self._show("Connecting…", error=False)
         T.set_enabled(self.btn, False)
-        threading.Thread(target=self._work, args=(name,), daemon=True).start()
+        threading.Thread(target=self._work,
+                         args=(self.app.client, self.app.q, host, port, name), daemon=True).start()
 
-    def _work(self, name):  # blocking connect runs off the UI thread
+    @staticmethod
+    def _work(client, events, host, port, name):
+        # Keep widget/App references off this worker, including during cleanup.
         try:
-            self.app.client.connect(self.host.get().strip(), int(self.port.get()), name)
-            self.app.after(0, self.app.show_main, name)
+            confirmed_name = client.connect(host, port, name)
+            events.put(("connected", confirmed_name))
         except NameTakenError:
-            self.app.after(0, self._fail, f'Username "{name}" is already taken')
-        except (ConnectionError, OSError, ValueError) as ex:
-            self.app.after(0, self._fail, f"Cannot connect: {ex}")
+            events.put(("connect_failed", f'Username "{name}" is already taken'))
+        except (ConnectionError, OSError, ValueError, EOFError) as ex:
+            events.put(("connect_failed", f"Cannot connect: {ex}"))
 
     def _show(self, text, error):
         self.status.config(text=text, fg=T.ERR if error else T.MUTE)

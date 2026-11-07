@@ -1,0 +1,51 @@
+# Tkinter networking, replies, emoji, and integration tests
+
+The desktop UI can now communicate with the existing TCP server through a real
+client adapter. Run one server and launch a separate desktop process for each
+client using `python -m frontend.ui.app --real`.
+
+## Done
+
+- Background TCP receive/write workers, registration, error handling, bounded
+  outgoing requests, and clean disconnect/reconnect behavior.
+- Private and group messaging connected to the desktop UI with server-confirmed
+  message IDs, sender names, timestamps, and own-message echoes.
+- Online-user and group refresh, group create/join/leave, and member names shown
+  only for groups the client has joined.
+- Reply selection/cancellation, quote display, and unavailable-original fallback.
+- Emoji picker and UTF-8 Thai/emoji handling, including emoji-only bubble sizing
+  and popup cleanup when closing a tab or leaving a group.
+- Unicode username validation and private conversation keys that preserve spaces
+  and punctuation.
+- Terminal, network-adapter, and Tkinter integration coverage: 53 tests passed
+  locally on Windows/Python 3.14.5; native desktop checks and screenshots included.
+- GitHub Actions workflow that runs the suite on a hosted Windows runner,
+  rejects skipped GUI tests, and uploads a detailed test log.
+- Updated setup/run instructions, bug list, acceptance checklist, and evidence.
+
+## Not done / blocked
+
+- **Physical two-computer LAN acceptance:** not run. Repeat the documented cases
+  on the team's two devices, including a third client for privacy checks, and
+  record the actual network/device evidence.
+- **Real chatbot transport and AI integration:** blocked on Persons 1 and 3 for
+  the request/response contract and server/model implementation. Real mode shows
+  the chatbot as unavailable; mock mode remains a demonstration.
+- **Expanded mentions:** Person 3 still needs to define behavior for usernames
+  containing spaces/punctuation, notifications, and mentions in replies. Existing
+  `@word` highlighting is retained.
+- **Final presentation:** Person 2 still needs to select final UI/demo screenshots;
+  local visual evidence is available, with LAN demo evidence still outstanding.
+
+## Validation and evidence
+
+- Local suite: `python -m unittest discover -s tests -v` — 53 passed, no skips.
+- Hosted CI: see this branch's **Person 4 tests** run in the repository's Actions
+  tab; local results do not establish the outcome of the hosted run.
+- [Recorded local test results](evidence/TEST_RESULTS.txt).
+- [Local visual checks and screenshots](evidence/LOCAL_VISUAL_QA.md).
+- [Detailed Person 4 status and acceptance cases](PERSON4_STATUS.md).
+
+The server wire contract is unchanged. This branch connects the desktop UI to
+the existing server; it does not add authenticated accounts, TLS, or persistent
+message history.
