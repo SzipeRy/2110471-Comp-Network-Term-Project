@@ -12,6 +12,7 @@ MEMBERLIST_MESSAGE = "!MEMBERLIST"
 GROUPLIST_MESSAGE = "!GROUPLIST"
 DEFAULT_ROOM = "lobby"
 BOT_ROOM = "chatbot"
+BOT_NAME = "Bot"
 MAX_MESSAGE_BYTES = 1024 * 1024
 
 
@@ -176,7 +177,8 @@ def receive_messages(conn, disconnected, username=None):
                     flush=True,
                 )
                 sender = message["sender_id"]
-                if username and sender != username and username in message.get("mentions", []):
+                # The bot's answers can repeat a name, but only people's mentions notify.
+                if username and sender not in (username, BOT_NAME) and username in message.get("mentions", []):
                     print(f"\a[MENTION] {sender} mentioned you in {room}", flush=True)
             elif message.get("type") == "group_event":
                 print(f"\n[group: {message['room']}] [SYSTEM] {message['text']}", flush=True)

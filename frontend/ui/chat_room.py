@@ -170,7 +170,8 @@ class ChatRoom(tk.Frame):
         from_bot = msg["sender"] == BOT_NAME
         names = msg.get("mentions") or []
         me = (self.app.username or "").casefold()
-        mentions_me = not mine and any(name.casefold() == me for name in names)
+        # Only people's messages turn yellow; the bot's answers stay green (names are still highlighted).
+        mentions_me = not mine and not from_bot and any(name.casefold() == me for name in names)
         if self.typing_row and not mine:
             self.typing_row.destroy()
             self.typing_row = None

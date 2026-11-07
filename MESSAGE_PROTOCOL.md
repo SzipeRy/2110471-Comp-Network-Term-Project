@@ -239,7 +239,9 @@ for highlighting in `frontend/ui/mentions.py`):
 
 Mentions never change delivery. Mentioning a connected user who is not in the
 private or group chat lists them in `mentions`, but they neither receive the
-message nor a notification. Messages from `Bot` mention users but never the bot itself.
+message nor a notification. Messages from `Bot` mention users but never the bot itself;
+clients highlight those names but do not notify for them, because an answer may
+repeat a name from the question.
 
 ## AI chatbot
 

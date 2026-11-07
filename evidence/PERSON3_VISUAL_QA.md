@@ -21,7 +21,7 @@ without the macOS title bar.
 | Mention highlight | The mentioning bubble is yellow and `@Alice` has a darker yellow background; other names are bold blue |
 | Suggestions | `@` lists the chat's members and `🤖 @Bot` just above the chat box, lined up with the entry; `@b` narrows the list |
 | Mention outside the chat | "Dave is not in this chat, so they will not see this message" appears under the sender's message |
-| `@Bot` in a group | The answer quotes the question and the whole group sees it. This test answer starts with `@Alice`, so Alice sees it in yellow; an answer without a mention is green |
+| `@Bot` in a group | The answer quotes the question and the whole group sees it. It stays green although it starts with `@Alice`; that name is highlighted, but the bot's messages never notify |
 | Smallest window (700×450) | The notification wraps onto three lines and no text is hidden; the bar and the suggestions fit together; Dave's row in the sidebar has the `@` badge for his private mention |
 | Reply and suggestions | The suggestion list stays above the divider and does not cover the reply bar |
 
@@ -45,6 +45,11 @@ without the macOS title bar.
 After Zian's review, the `@` on the tab alone was too easy to miss, so a mentioned
 chat now also gets a yellow sidebar row with an `@` badge that counts mentions,
 and an orange dot on its tab. Both clear when you open the chat.
+
+After Yok's review on Windows, messages from the bot no longer notify. When an
+answer repeated `@Bob` from the question, Bob got a second "Bot mentioned you"
+bar that replaced the one from the person who tagged him. The bot's answers still
+highlight names, but they stay green and cause no bar, beep or badge.
 
 Before the fixes:
 

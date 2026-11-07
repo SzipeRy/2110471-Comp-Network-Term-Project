@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from .net_interface import private_room_id, private_peer
+from .net_interface import BOT_NAME, private_room_id, private_peer
 from . import theme as T
 from .chat_room import ChatRoom
 from .groups_dialog import GroupsDialog
@@ -165,8 +165,11 @@ class MainWindow(tk.Frame):
 
     # ---------- @mention notifications ----------
     def _mentions_me(self, msg):
+        """A person's message that mentions you. The bot's answers highlight names but never
+        notify: an echoed or quoted @name would otherwise replace the real mention's bar."""
         me = (self.app.username or "").casefold()
-        return (msg["type"] == "chat_message" and msg["sender"].casefold() != me
+        return (msg["type"] == "chat_message" and msg["sender"] != BOT_NAME
+                and msg["sender"].casefold() != me
                 and any(name.casefold() == me for name in msg.get("mentions") or ()))
 
     @staticmethod

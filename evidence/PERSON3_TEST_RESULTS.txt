@@ -1,7 +1,7 @@
-Person 3 (chatbot and @mentions) local CI-entrypoint validation — 2026-11-08, after the Gemini provider and the sidebar mention badge
+Person 3 (chatbot and @mentions) local CI-entrypoint validation — 2026-11-08, after Yok's review (bot messages never notify)
 Environment: macOS 27.0.1 (Apple silicon), Python 3.14.9, Tk 9.0, anthropic 2.6.0; loopback TCP.
 Command: python .github/scripts/run_tests.py
-Result: 83 passed, no skips (56 earlier tests + 27 chatbot/mention tests, 4 of them with hidden Tk windows).
+Result: 84 passed, no skips (56 earlier tests + 28 chatbot/mention tests, 5 of them with hidden Tk windows).
 No real API key: the server used the offline echo bot or a local fake of the Gemini or Claude API.
 Separately, one request with a fake key reached the real Gemini API and came back as "key rejected".
 A live AI answer and physical two-computer acceptance were not part of this run.
@@ -75,6 +75,7 @@ test_registration_errors_allow_retry_and_preserve_canonical_name (test_network_c
 test_server_shutdown_notifies_once_and_client_can_reconnect (test_network_client.NetworkClientTests.test_server_shutdown_notifies_once_and_client_can_reconnect) ... ok
 test_unicode_private_messages_replies_and_own_echo_exclude_outsider (test_network_client.NetworkClientTests.test_unicode_private_messages_replies_and_own_echo_exclude_outsider) ... ok
 test_bot_room_shows_typing_and_waits_for_each_answer (test_person3_ui.ChatbotGuiTests.test_bot_room_shows_typing_and_waits_for_each_answer) ... ok
+test_bot_answers_highlight_names_but_never_notify (test_person3_ui.MentionGuiTests.test_bot_answers_highlight_names_but_never_notify) ... ok
 test_bot_name_is_reserved_on_the_login_screen (test_person3_ui.MentionGuiTests.test_bot_name_is_reserved_on_the_login_screen) ... ok
 test_mention_highlight_marker_banner_and_suggestions (test_person3_ui.MentionGuiTests.test_mention_highlight_marker_banner_and_suggestions) ... ok
 test_suggestions_handle_thai_and_emoji_before_the_cursor (test_person3_ui.MentionGuiTests.test_suggestions_handle_thai_and_emoji_before_the_cursor) ... ok
@@ -92,6 +93,6 @@ test_reply_menu_cancel_then_send_and_quote (test_ui_integration.GuiIntegrationTe
 test_switching_private_and_group_tabs_keeps_destinations_separate (test_ui_integration.GuiIntegrationTests.test_switching_private_and_group_tabs_keeps_destinations_separate) ... ok
 
 ----------------------------------------------------------------------
-Ran 83 tests in 24.295s
+Ran 84 tests in 24.927s
 
 OK

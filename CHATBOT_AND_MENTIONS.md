@@ -147,6 +147,8 @@ tier is not), so nobody should send the bot anything private.
   appears with an **Open** button, and the computer beeps. Badge and dot clear
   when you open the chat. The bar closes after 8 seconds or
   when you open that chat. The terminal client prints `[MENTION] Bob mentioned you in group: Study`.
+  Only people's messages notify: names in the bot's answers are highlighted, but
+  the answer stays green and causes no bar, beep, badge or `[MENTION]` line.
 - **Autocomplete:** typing `@` lists the people who can read this chat, plus
   `🤖 @Bot`. Use Up/Down, then Enter or Tab (or click); Esc closes the list.
   The full name is inserted, so names with spaces, Thai and emoji are easy to

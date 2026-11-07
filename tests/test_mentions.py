@@ -113,6 +113,21 @@ class MentionServerTests(p3.BotServerTestCase):
         test_chat.wait_for_line(output, "[Bob] @alice stand-up in 5")
         test_chat.wait_for_line(output, "[MENTION] Bob mentioned you in group: lobby")
         self.assertEqual(self.receive(bob)["mentions"], ["Alice"])
+
+        def lines_until(text):
+            seen = []
+            while not seen or text not in seen[-1]:
+                seen.append(output.get(timeout=p3.BOT_TIMEOUT))
+            return seen
+
+        # The echo bot repeats "@alice", but only Bob's own mentions print a notice.
+        wire.send(bob, wire.create_message("@Bot say hi to @alice"))
+        seen = lines_until("[Bot] Echo #1")
+        wire.send(bob, wire.create_message("@alice thanks"))
+        seen += lines_until("[Bob] @alice thanks")
+        seen += lines_until("[MENTION]")
+        self.assertEqual([line.strip("\a\n") for line in seen if "[MENTION]" in line],
+                         ["[MENTION] Bob mentioned you in group: lobby"] * 2)
         terminal.stdin.write(wire.DISCONNECT_MESSAGE + "\n")
         terminal.stdin.flush()
         self.assertEqual(terminal.wait(timeout=5), 0)

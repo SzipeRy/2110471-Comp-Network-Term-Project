@@ -11,6 +11,7 @@ from frontend.network_client import NetworkClient
 from frontend.ui.app import App
 from frontend.ui.chat_room import ChatRoom
 from frontend.ui.net_interface import private_room_id
+from frontend.ui import theme as T
 
 
 def descendants(widget):
@@ -111,6 +112,28 @@ class MentionGuiTests(GuiTestCase):
         self.assertIn("Carol is not in this chat, so they will not see this message", labels(room))
         self.assertNotIn("Study", {m["room_id"] for m in p3.drain(carol.queues["message"])})
         self.assertFalse(self.showerror.called)
+
+    def test_bot_answers_highlight_names_but_never_notify(self):
+        bob, b, _ = self.adapter("Bob")
+        bob.create_group("Study")
+        b.wait("groups", lambda g: "Study" in g)
+        self.login("Alice")
+        self.client.join_group("Study")
+        self.pump(lambda: getattr(self.app.groups.get("Study"), "members", None) == ("Alice", "Bob"))
+        main = self.app.main
+        main.open_bot()  # another chat is in front
+        bob.send_message("group", "Study", "@Bot please greet @Alice")
+        self.pump(lambda: len(getattr(main.rooms.get(("group", "Study")), "messages", ())) == 2,
+                  timeout=p3.BOT_TIMEOUT)
+        room = main.rooms[("group", "Study")]
+        answer = next(m for m in room.messages.values() if m["sender"] == "Bot")
+        self.assertEqual(answer["mentions"], ["Alice"])  # the echo bot repeats the question
+        self.assertEqual(room.unread_mentions, 1)  # only Bob's message counts
+        self.assertEqual(main.tabs.tab(room, "text"), "#Study  @")
+        self.assertTrue(main.mention_lbl.cget("text").startswith("🔔 Bob mentioned you in #Study"))
+        bob_text, bot_text = [w for w in descendants(room) if isinstance(w, tk.Text)]
+        self.assertEqual((bob_text.cget("bg"), bot_text.cget("bg")), (T.MENTION, T.BOT))
+        self.assertEqual(bot_text.get(*bot_text.tag_ranges("mention_me")), "@Alice")
 
     def test_suggestions_handle_thai_and_emoji_before_the_cursor(self):
         _, peer, _ = self.adapter("บ๊อบ 😀")
