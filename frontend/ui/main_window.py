@@ -40,14 +40,21 @@ class MainWindow(tk.Frame):
         # Mention notification bar, shown above the chat tabs for a few seconds.
         self.mention_bar = tk.Frame(right, bg=T.MENTION, highlightthickness=1,
                                     highlightbackground=T.MENTION_TAG)
-        tk.Button(self.mention_bar, text="✕", font=T.F_SMALL, relief="flat", bd=0, bg=T.MENTION,
-                  fg=T.MUTE, activebackground=T.MENTION, cursor="hand2",
-                  command=self.hide_mention).pack(side="right", padx=(0, 6))
+        # A label, not a button: macOS would draw a native button face over the yellow bar.
+        close = tk.Label(self.mention_bar, text="✕", font=T.F, fg=T.MUTE, bg=T.MENTION,
+                         padx=6, cursor="hand2")
+        close.pack(side="right", padx=(0, 4))
+        close.bind("<Button-1>", lambda _e: self.hide_mention())
+        close.bind("<Enter>", lambda _e: close.config(fg=T.INK))
+        close.bind("<Leave>", lambda _e: close.config(fg=T.MUTE))
         T.button(self.mention_bar, "Open", self.open_mention).pack(side="right", padx=6, pady=4)
         self.mention_lbl = tk.Label(self.mention_bar, font=T.F, fg=T.INK, bg=T.MENTION, anchor="w",
                                     justify="left", wraplength=480, cursor="hand2")
         self.mention_lbl.pack(side="left", fill="x", expand=True, padx=8, pady=4)
         self.mention_lbl.bind("<Button-1>", lambda _e: self.open_mention())
+        # Wrap at the label's real width, so a narrow window never hides text under Open.
+        self.mention_lbl.bind("<Configure>",
+                              lambda e: self.mention_lbl.config(wraplength=max(100, e.width - 16)))
         self.mention_key = None
         self._mention_job = None
         self.placeholder = tk.Label(right, text="Select a user, group or the chatbot to start chatting",

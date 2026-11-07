@@ -44,6 +44,7 @@ class ChatRoom(tk.Frame):
         self.reply_lbl = tk.Label(self.reply_bar, font=T.F_SMALL, fg=T.MUTE, bg=T.CARD, anchor="w")
         self.reply_lbl.pack(side="left", fill="x", expand=True, padx=6)
         tk.Button(self.reply_bar, text="✕", font=T.F_SMALL, relief="flat", bd=0, bg=T.CARD, fg=T.MUTE,
+                  highlightthickness=0,  # no dark focus frame around it in macOS dark mode
                   cursor="hand2", command=self.clear_reply).pack(side="right")
         self.locked_lbl = tk.Label(self.bottom, text="Join this group to send messages",
                                    font=T.F_SMALL, fg=T.MUTE, bg=T.CARD, anchor="w")
@@ -320,10 +321,11 @@ class ChatRoom(tk.Frame):
         self.suggested = names
         self.suggest_box.delete(0, "end")
         for name in names:
-            self.suggest_box.insert("end", f" 🤖 @{name}" if name == BOT_NAME else f" @{name}")
+            self.suggest_box.insert("end", f"  🤖 @{name}" if name == BOT_NAME else f"  @{name}")
         self.suggest_box.config(height=len(names))
         self._select_suggestion(0)
-        self.suggest_box.place(in_=self.input_row, x=0, y=-4, anchor="sw")
+        # Bottom-left of the message window, lined up with the entry and clear of the divider.
+        self.suggest_box.place(in_=self.list, x=8, rely=1.0, y=-6, anchor="sw")
         self.suggest_box.lift()
 
     def _select_suggestion(self, index):

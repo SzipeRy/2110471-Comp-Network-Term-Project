@@ -64,11 +64,15 @@ def _add_tab_close_button(root, s):
 
 
 def button(parent, text, command, primary=False, **kw):
-    b = tk.Button(parent, text=text, command=command, font=F, relief="flat", bd=0, cursor="hand2",
+    if primary and parent.tk.call("tk", "windowingsystem") == "aqua":
+        # macOS paints its own light button face and ignores bg, so white text would vanish.
+        colors = dict(fg=ACC, activeforeground=ACC_DARK, font=F_BOLD)
+    else:
+        colors = dict(fg="white" if primary else ACC, activeforeground="white" if primary else ACC, font=F)
+    b = tk.Button(parent, text=text, command=command, relief="flat", bd=0, cursor="hand2",
                   padx=10, pady=3, highlightthickness=1, highlightbackground=ACC,
-                  bg=ACC if primary else CARD, fg="white" if primary else ACC,
-                  activebackground=ACC_DARK if primary else ME,
-                  activeforeground="white" if primary else ACC, **kw)
+                  bg=ACC if primary else CARD, activebackground=ACC_DARK if primary else ME,
+                  **colors, **kw)
     b.primary = primary
     return b
 
