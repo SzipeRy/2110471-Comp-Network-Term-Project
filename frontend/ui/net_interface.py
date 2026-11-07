@@ -7,7 +7,11 @@ Message dict (shared contract):
   {type, room_type: "private"|"group"|"bot", room_id, message_id, sender,
    text, reply_to, mentions, timestamp}
 The server echoes a user's own messages back, so the UI only draws what on_message delivers.
+on_message also delivers type="system_message" for group join announcements,
+using the same room_id/message_id/text fields. These rows cannot be replied to.
 """
+from dataclasses import dataclass
+import json
 
 
 class NameTakenError(Exception):
@@ -15,17 +19,38 @@ class NameTakenError(Exception):
 
 
 def private_room_id(a, b):
-    return "-".join(sorted([a, b]))
+    # JSON preserves spaces, hyphens and every other valid username character.
+    return json.dumps(sorted([a, b]), ensure_ascii=False)
+
+
+def private_peer(room_id, me):
+    names = json.loads(room_id)
+    if (not isinstance(names, list) or len(names) != 2
+            or not all(isinstance(n, str) for n in names)
+            or names.count(me) != 1):
+        raise ValueError("Invalid private conversation")
+    return next(name for name in names if name != me)
+
+
+@dataclass(frozen=True)
+class GroupInfo:
+    joined: bool
+    member_count: int
+    # None means names are unavailable, rather than an empty group.
+    members: tuple[str, ...] | None = None
 
 
 class ClientInterface:
+    supports_bot = False
+    supports_group_events = False
+
     def set_handlers(self, on_message, on_users, on_groups, on_error, on_disconnect):
-        """on_message(msg) · on_users([names]) · on_groups({group: [members]})
+        """on_message(msg) · on_users([names]) · on_groups({group: GroupInfo})
         on_error(text) · on_disconnect()"""
         raise NotImplementedError
 
     def connect(self, host, port, username):
-        """Blocking. Raise NameTakenError (R3) or ConnectionError."""
+        """Blocking; return the server-confirmed name. Raise NameTakenError or ConnectionError."""
         raise NotImplementedError
 
     def send_message(self, room_type, room_id, text, reply_to=None):

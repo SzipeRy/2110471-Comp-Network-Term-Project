@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from .net_interface import private_room_id
+from .net_interface import private_room_id, private_peer
 from . import theme as T
 from .chat_room import ChatRoom
 from .groups_dialog import GroupsDialog
@@ -84,11 +84,15 @@ class MainWindow(tk.Frame):
         if not self.app.groups:
             tk.Label(self.groups_box, text="No groups yet", font=T.F_SMALL, fg=T.MUTE,
                      bg=T.CARD).pack(anchor="w", padx=6)
-        for g, members in sorted(self.app.groups.items()):  # R9
-            mark = " ✓" if me in members else ""
-            self._row(self.groups_box, f"#{g} ({len(members)}){mark}", lambda g=g: self.open_group(g),
+        for g, info in sorted(self.app.groups.items()):  # R9
+            mark = " ✓" if info.joined else ""
+            self._row(self.groups_box, f"#{g} ({info.member_count}){mark}", lambda g=g: self.open_group(g),
                       selected=cur == ("group", g))
-        self._row(self.ai_box, "🤖 Chatbot", self.open_bot, selected=cur == ("bot", "chatbot"))
+        if self.app.client.supports_bot:
+            self._row(self.ai_box, "🤖 Chatbot", self.open_bot, selected=cur == ("bot", "chatbot"))
+        else:
+            tk.Label(self.ai_box, text="Chatbot unavailable", font=T.F_SMALL,
+                     fg=T.MUTE, bg=T.CARD).pack(anchor="w", padx=6)
 
     # ---------- updates pushed from the client ----------
     def update_users(self, _users):
@@ -98,7 +102,7 @@ class MainWindow(tk.Frame):
         self.render_sidebar()
         for (rtype, rid), room in self.rooms.items():
             if rtype == "group":
-                room.set_group_info(groups.get(rid, []), exists=rid in groups)
+                room.set_group_info(groups.get(rid))
         if self.groups_dlg and self.groups_dlg.winfo_exists():
             self.groups_dlg.refresh()
 
@@ -111,7 +115,7 @@ class MainWindow(tk.Frame):
     # ---------- rooms / tabs ----------
     def _title(self, rtype, rid):
         if rtype == "private":
-            return next(u for u in rid.split("-") if u != self.app.username)
+            return private_peer(rid, self.app.username)
         return "🤖 Bot" if rtype == "bot" else f"#{rid}"
 
     def _visible_tabs(self):
@@ -143,7 +147,7 @@ class MainWindow(tk.Frame):
             self.titles[room] = self._title(rtype, rid)
             self.tabs.add(room, text=self.titles[room])
             if rtype == "group":
-                room.set_group_info(self.app.groups.get(rid, []), exists=rid in self.app.groups)
+                room.set_group_info(self.app.groups.get(rid))
         elif self.tabs.tab(self.rooms[key], "state") == "hidden":
             self.tabs.add(self.rooms[key])  # re-open a closed tab
         self._show_placeholder_if_empty()
@@ -174,6 +178,7 @@ class MainWindow(tk.Frame):
         """Hide the tab. Messages stay; it re-opens from the sidebar or when a new message arrives."""
         room = self.nametowidget(tab_id)
         room.clear_reply()
+        room.close_emoji()
         self.tabs.hide(room)
         self._show_placeholder_if_empty()
         self.render_sidebar()

@@ -35,17 +35,20 @@ class GroupsDialog(tk.Toplevel):
             w.destroy()
         if not self.app.groups:
             tk.Label(self.list.inner, text="No groups yet", font=T.F, fg=T.MUTE, bg=T.CARD).pack(pady=10)
-        for g, members in sorted(self.app.groups.items()):
-            joined = self.app.username in members
+        for g, group in sorted(self.app.groups.items()):
+            joined = group.joined
             row = tk.Frame(self.list.inner, bg=T.CARD, pady=5)
             row.pack(fill="x")
             info = tk.Frame(row, bg=T.CARD)
             info.pack(side="left", fill="x", expand=True)
             tk.Label(info, text=f"#{g}", font=T.F_BOLD, fg=T.INK, bg=T.CARD, anchor="w").pack(fill="x")
-            tk.Label(info, text="members: " + (", ".join(members) or "-"), font=T.F_SMALL, fg=T.MUTE,
+            detail = ("members: " + ", ".join(group.members) if group.members is not None
+                      else f"{group.member_count} members · join to view names")
+            tk.Label(info, text=detail, font=T.F_SMALL, fg=T.MUTE,
                      bg=T.CARD, anchor="w", justify="left", wraplength=250).pack(fill="x")
             if joined:
-                T.button(row, "Leave", lambda g=g: self.app.main.leave_group(g, parent=self)).pack(side="right")
+                if g != "lobby":
+                    T.button(row, "Leave", lambda g=g: self.app.main.leave_group(g, parent=self)).pack(side="right")
                 T.button(row, "Open", lambda g=g: self.app.main.open_group(g)).pack(side="right", padx=4)
                 tk.Label(row, text="Joined ✓", font=T.F_SMALL, fg=T.ONLINE, bg=T.CARD).pack(side="right", padx=6)
             else:

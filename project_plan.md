@@ -47,7 +47,7 @@
 
 ## Shared Message Contract
 
-The current TCP server and terminal client implement the wire contract documented in [MESSAGE_PROTOCOL.md](MESSAGE_PROTOCOL.md), including private/group routing and permission checks. The structure below describes the existing Tkinter UI contract; a future real-client adapter must map the wire fields (`room`, `msg_id`, `sender_id`) to its UI fields (`room_id`, `message_id`, `sender`).
+The TCP server, terminal client, and real Tkinter adapter implement the wire contract documented in [MESSAGE_PROTOCOL.md](MESSAGE_PROTOCOL.md), including private/group routing and permission checks. The structure below describes the Tkinter UI contract; `frontend/network_client.py` maps wire fields (`room`, `msg_id`, `sender_id`) to UI fields (`room_id`, `message_id`, `sender`). Private tabs use a JSON-encoded username pair, while outgoing private requests address the peer's canonical username. The chatbot and mention rules remain Person 3's integration work. See [PERSON4_STATUS.md](PERSON4_STATUS.md) for completed work and remaining dependencies.
 
 ```json
 {

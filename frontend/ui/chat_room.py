@@ -1,8 +1,11 @@
 import re
+import math
 import tkinter as tk
+from tkinter import font as tkfont
 
 from . import theme as T
 from .emoji_picker import EmojiPicker
+from .net_interface import private_peer
 
 
 class ChatRoom(tk.Frame):
@@ -13,8 +16,10 @@ class ChatRoom(tk.Frame):
         super().__init__(master, bg=T.CARD)
         self.app, self.room_type, self.room_id = app, room_type, room_id
         self.messages = {}      # message_id -> msg (for reply quotes)
+        self.system_messages = {}  # server event IDs, separate from replyable chat
         self.reply_to = None
         self.typing_row = None
+        self.emoji_picker = None
 
         # header bar
         head = tk.Frame(self, bg=T.BG)
@@ -53,7 +58,7 @@ class ChatRoom(tk.Frame):
         self.list.pack(fill="both", expand=True)
 
         if room_type == "private":
-            other = next(u for u in room_id.split("-") if u != app.username)
+            other = private_peer(room_id, app.username)
             self.header.config(text=f"Private chat with {other}")
         elif room_type == "bot":
             self.header.config(text="🤖 Chatbot")
@@ -62,11 +67,13 @@ class ChatRoom(tk.Frame):
                          "bot": "Ask the AI chatbot anything"}[room_type])
 
     # ---------- group membership (R10, R11) ----------
-    def set_group_info(self, members, exists=True):
+    def set_group_info(self, info):
         """Active = joined. Inactive = not joined, left, or the group was deleted (read-only)."""
-        joined = exists and self.app.username in members
+        exists = info is not None
+        joined = exists and info.joined
         if self.joined is not None and joined != self.joined:
-            self.add_system("You joined the group" if joined else "You left the group")
+            if not joined or not self.app.client.supports_group_events:
+                self.add_system("You joined the group" if joined else "You left the group")
         was_member = self.joined is not None and (self.joined or getattr(self, "_left", False))
         self._left = was_member and not joined
         self.joined = joined
@@ -78,9 +85,12 @@ class ChatRoom(tk.Frame):
             self.header.config(text=f"#{self.room_id}  ·  group closed", fg=T.MUTE)
             self.locked_lbl.config(text="This group no longer exists. You can still read old messages.")
         else:
-            self.header.config(text=f"#{self.room_id}  ·  members: {', '.join(members) or '-'}", fg=T.INK)
+            detail = ("members: " + ", ".join(info.members) if info.members is not None
+                      else f"{info.member_count} members")
+            self.header.config(text=f"#{self.room_id}  ·  {detail}", fg=T.INK)
             if joined:
-                self.leave_btn.pack(side="right", padx=8)
+                if self.room_id != "lobby":
+                    self.leave_btn.pack(side="right", padx=8)
             else:
                 self.join_btn.pack(side="right", padx=8)
                 self.locked_lbl.config(text="You left this group. Join again to send messages."
@@ -88,6 +98,7 @@ class ChatRoom(tk.Frame):
         if not joined:
             self.locked_lbl.pack(fill="x", pady=(0, 4), before=self.input_row)
             self.clear_reply()
+            self.close_emoji()
         for w in (self.entry, self.emoji_btn, self.send_btn):
             T.set_enabled(w, joined)
 
@@ -96,20 +107,36 @@ class ChatRoom(tk.Frame):
         text = self.entry.get().strip()
         if not text or self.entry.cget("state") == "disabled":
             return
-        self.app.client.send_message(self.room_type, self.room_id, text, self.reply_to)
+        if self.app.client.send_message(self.room_type, self.room_id, text, self.reply_to) is False:
+            return
         self.entry.delete(0, "end")
         self.clear_reply()
         if self.room_type == "bot":
             self._show_typing()
 
     def open_emoji(self):
-        EmojiPicker(self.emoji_btn, lambda e: (self.entry.insert("insert", e), self.entry.focus()))
+        self.close_emoji()
+        self.emoji_picker = EmojiPicker(
+            self.emoji_btn, lambda e: (self.entry.insert("insert", e), self.entry.focus()))
+
+    def close_emoji(self):
+        if self.emoji_picker is not None and self.emoji_picker.winfo_exists():
+            self.emoji_picker.destroy()
+        self.emoji_picker = None
 
     # ---------- displaying ----------
     def add_system(self, text):
         tk.Label(self.list.inner, text=text, font=T.F_SMALL, fg=T.MUTE, bg=T.CARD).pack(pady=(8, 4))
 
     def add_message(self, msg):
+        if msg["type"] == "system_message":
+            if msg["message_id"] not in self.system_messages:
+                self.system_messages[msg["message_id"]] = msg
+                self.add_system(msg["text"])
+                self.list.scroll_to_end()
+            return
+        if msg["message_id"] in self.messages:
+            return
         self.messages[msg["message_id"]] = msg
         mine = msg["sender"] == self.app.username
         if self.typing_row and not mine:
@@ -127,15 +154,19 @@ class ChatRoom(tk.Frame):
                  fg=T.MUTE, bg=color, anchor="w").pack(fill="x")
 
         quoted = self.messages.get(msg.get("reply_to"))
-        if quoted:  # reply quote with a blue strip
+        if msg.get("reply_to"):  # reply quote with a blue strip
             q = tk.Frame(bubble, bg=color)
             q.pack(fill="x", pady=(2, 3))
             tk.Frame(q, bg=T.ACC, width=3).pack(side="left", fill="y")
-            tk.Label(q, text=f"{quoted['sender']}: {quoted['text'][:50]}", font=T.F_SMALL, fg=T.MUTE,
+            quote = f"{quoted['sender']}: {quoted['text'][:50]}" if quoted else "Original message unavailable"
+            tk.Label(q, text=quote, font=T.F_SMALL, fg=T.MUTE,
                      bg=color, justify="left", wraplength=260).pack(side="left", padx=(5, 0))
 
         text = msg["text"]
-        width = min(max((len(line) for line in text.splitlines()), default=1) + 1, 42)
+        # Text.width uses font character cells, not Unicode code-point counts.
+        font = tkfont.Font(font=T.F)
+        pixels = max((font.measure(line) for line in text.splitlines()), default=1)
+        width = min(math.ceil(pixels / max(1, font.measure("0"))) + 1, 42)
         body = tk.Text(bubble, font=T.F, bg=color, fg=T.INK, relief="flat", bd=0, highlightthickness=0,
                        wrap="word", width=width, height=1, padx=0, pady=0, cursor="arrow")
         body.tag_config("mention", foreground=T.ACC, font=T.F_BOLD)

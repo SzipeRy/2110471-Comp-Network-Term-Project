@@ -68,9 +68,12 @@ def send(conn, message):
     conn.sendall(header + payload)
 
 
-def register(conn, username):
+def register(conn, username, *, group_events=False):
     """Return the server-confirmed name, or raise ValueError for a rejected name."""
-    send(conn, {"type": "register", "username": username})
+    request = {"type": "register", "username": username}
+    if group_events:
+        request["group_events"] = True
+    send(conn, request)
     response = receive_message(conn)
     if response.get("type") == "error":
         if response.get("code") in {"invalid_username", "username_taken"}:
@@ -92,7 +95,7 @@ def choose_username(conn, username=None):
         if username is None:
             username = input("Username (1-20 characters): ")
         try:
-            return register(conn, username)
+            return register(conn, username, group_events=True)
         except ValueError as exc:
             print(f"[ERROR] {exc}", flush=True)
             username = None
@@ -164,6 +167,8 @@ def receive_messages(conn, disconnected):
                     f" (id: {message['msg_id']}{reply})",
                     flush=True,
                 )
+            elif message.get("type") == "group_event":
+                print(f"\n[group: {message['room']}] [SYSTEM] {message['text']}", flush=True)
             elif message.get("type") == "error":
                 print(f"\n[ERROR] {message['code']}: {message['text']}", flush=True)
             elif message.get("type") == "member_list":

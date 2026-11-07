@@ -5,10 +5,12 @@ import threading
 import time
 import uuid
 
-from .net_interface import ClientInterface, NameTakenError, private_room_id
+from .net_interface import ClientInterface, GroupInfo, NameTakenError, private_peer
 
 
 class MockClient(ClientInterface):
+    supports_bot = True
+    supports_group_events = True
     def __init__(self):
         self.me = None
         self.users = ["Bob", "Carol"]
@@ -25,10 +27,12 @@ class MockClient(ClientInterface):
         self.me = username
         self.users.append(username)
         self._push_lists()
+        return username
 
     def _push_lists(self):
         self.on_users(list(self.users))
-        self.on_groups({g: list(m) for g, m in self.groups.items()})
+        self.on_groups({g: GroupInfo(self.me in m, len(m), tuple(m) if self.me in m else None)
+                        for g, m in self.groups.items()})
 
     def _msg(self, room_type, room_id, sender, text, reply_to=None):
         return {"type": "chat_message", "room_type": room_type, "room_id": room_id,
@@ -46,7 +50,7 @@ class MockClient(ClientInterface):
         if room_type == "bot":
             self.on_message(self._msg("bot", "chatbot", "Bot", f"(mock AI) You said: {text}"))
         elif room_type == "private":
-            other = [u for u in room_id.split("-") if u != self.me][0]
+            other = private_peer(room_id, self.me)
             self.on_message(self._msg("private", room_id, other, "Got it 👍"))
         else:
             self.on_message(self._msg("group", room_id, "Carol", f"@{self.me} noted!"))
@@ -61,7 +65,12 @@ class MockClient(ClientInterface):
     def join_group(self, name):
         if self.me not in self.groups.get(name, []):
             self.groups[name].append(self.me)
-        self._push_lists()
+            self._push_lists()
+            notice = self._msg("group", name, "server", f"{self.me} joined the group")
+            notice.update(type="system_message", event="member_joined", username=self.me)
+            self.on_message(notice)
+        else:
+            self._push_lists()
 
     def leave_group(self, name):
         members = self.groups.get(name)

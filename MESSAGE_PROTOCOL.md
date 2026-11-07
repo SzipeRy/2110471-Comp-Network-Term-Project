@@ -1,6 +1,6 @@
 ﻿# TCP JSON message protocol
 
-`backend/server.py` and the terminal client `frontend/client.py` support registered users, private conversations, and group chats. The Tkinter UI still uses its separate mock client.
+`backend/server.py`, the terminal client `frontend/client.py`, and the Tkinter adapter `frontend/network_client.py` support registered users, private conversations, and group chats. Launch the real UI with `python -m frontend.ui.app --real`; its default mode remains an offline mock demonstration.
 
 ## Framing and limits
 
@@ -168,7 +168,7 @@ Group names and counts are discoverable so users can join existing groups. Membe
 {"type": "group_members", "room": "Study"}
 ```
 
-The `group_members` response includes `room` and a sorted `members` array. The requester must be a member. Only the requester receives it. Repeating a list command refreshes the snapshot; membership updates are not pushed automatically.
+The `group_members` response includes `room` and a sorted `members` array. The requester must be a member. Only the requester receives it. Repeating a list command refreshes the snapshot; complete membership lists are not pushed automatically. Subscribed clients separately receive the group join announcements below.
 
 ## Server-wide member list
 
@@ -179,6 +179,39 @@ The `group_members` response includes `room` and a sorted `members` array. The r
 ```
 
 Only the requester receives a `member_list` envelope with `members`, such as `["Alice", "Bob"]`. It includes the requester, preserves registered spelling, sorts by `casefold()`, and excludes unregistered connections. This public list reveals online names, not any private/group message contents. Requesting it before registration returns `registration_required`.
+
+## Group join announcements
+
+Clients can include `"group_events": true` in their registration request to
+subscribe to group join announcements. The desktop adapter and interactive
+terminal opt in. Clients omitting this option retain the original response
+stream. After a successful `join_group` that adds a new member, the server sends
+the normal `chat_selected` confirmation first to the joining client, then sends
+this event to subscribed members of that group, including the new member:
+
+```json
+{
+  "type": "group_event",
+  "room_type": "group",
+  "room": "Study",
+  "msg_id": "server-generated-event-id",
+  "sender_id": "server",
+  "text": "Bob joined the group",
+  "reply_to": null,
+  "timestamp": "2026-11-07T07:30:01.123+00:00",
+  "event": "member_joined",
+  "username": "Bob"
+}
+```
+
+The username and group name use server-confirmed spelling. Existing members
+pressing Join again, selecting/reopening a room, group discovery, and list
+refreshes do not emit events. Leaving and joining again emits a new event.
+Outsiders and members who have left do not receive the event. Events are not
+stored in the reply-reference index and cannot be quoted as chat messages.
+The desktop maps them to non-replyable `system_message` rows in the group log.
+There is no announcement history download and no new event for automatic lobby
+membership during registration.
 
 ## Replies
 
@@ -223,4 +256,27 @@ The server derives recipients from its own connection and membership registries.
 
 These permissions govern delivery between connected clients. The transport is raw TCP, without TLS or authenticated persistent accounts. The server operator controls the server process. Group creation/joining is open, while reading and sending require membership.
 
-The Tkinter UI remains on its mock backend. Its contract uses `room_type`, `room_id`, `message_id`, and `sender`; a future real network adapter must map `room` to `room_id`, `msg_id` to `message_id`, and `sender_id` to `sender`. Chatbot integration, persistent accounts/history, and invitation-only groups remain future work.
+The Tkinter adapter maps `msg_id` to `message_id`, `sender_id` to `sender`, and group
+`room` to `room_id`. For private messages, the UI uses a JSON-encoded pair of
+canonical usernames as its local tab key; the adapter constructs it from the
+server-derived `participants`. Outgoing private requests address the peer's
+username, never that local key or the server's opaque session ID. Server reply
+validation continues to use the live conversation context.
+
+The UI receives `GroupInfo(joined, member_count, members)` values. `members` is
+`None` when names are unavailable, including groups the user has not joined.
+The adapter polls `member_list` and `group_list` every two seconds, then requests
+`group_members` only for joined groups. Successful create/join/leave responses
+also update the local membership display. Opted-in clients additionally receive
+server-pushed `group_event` join announcements; full lists still use polling.
+
+All post-registration writes use a single background writer, and a separate
+receiver performs exact-length reads and invokes callbacks. Tk widgets are
+updated through the application's queue on the Tk main thread. Quotes use only
+messages received in that local tab; unavailable originals have a placeholder.
+The client does not manufacture IDs or display optimistic duplicates.
+
+Chatbot integration, persistent accounts/history, and invitation-only groups
+remain future work. Mention highlighting retains the existing `@word` matching;
+mention behavior for usernames containing spaces or punctuation still needs
+Person 3's agreed rules.
