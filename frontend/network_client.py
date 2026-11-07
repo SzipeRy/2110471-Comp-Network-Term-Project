@@ -1,18 +1,17 @@
 """Tkinter-free TCP adapter. Socket I/O runs in workers, callbacks may run there too."""
 from dataclasses import dataclass, field
 import queue
+import re
 import socket
 import threading
 import time
 
 if __package__:
     from . import client as wire
-    from .ui.net_interface import (BOT_ROOM, ClientInterface, GroupInfo, NameTakenError,
-                                   private_peer, private_room_id)
+    from .ui.net_interface import ClientInterface, GroupInfo, NameTakenError, private_peer, private_room_id
 else:  # python -m ui.app --real, from frontend/
     import client as wire
-    from ui.net_interface import (BOT_ROOM, ClientInterface, GroupInfo, NameTakenError,
-                                  private_peer, private_room_id)
+    from ui.net_interface import ClientInterface, GroupInfo, NameTakenError, private_peer, private_room_id
 
 
 @dataclass
@@ -31,7 +30,6 @@ class _Session:
 
 class NetworkClient(ClientInterface):
     supports_group_events = True
-    supports_bot = True  # the server answers room_type "bot" and @Bot mentions
     def __init__(self, refresh_interval=2.0, connect_timeout=5.0):
         self.refresh_interval = max(0.05, refresh_interval)
         self.connect_timeout = connect_timeout
@@ -127,8 +125,8 @@ class NetworkClient(ClientInterface):
                 return False
 
     def send_message(self, room_type, room_id, text, reply_to=None):
-        if room_type not in {"private", "group", "bot"}:
-            self.on_error(f"Unsupported chat room type: {room_type}")
+        if room_type not in {"private", "group"}:
+            self.on_error("Chatbot is not available on this server yet")
             return False
         with self._lock:
             session = self._session
@@ -136,10 +134,7 @@ class NetworkClient(ClientInterface):
                 self.on_error("Not connected to the server")
                 return False
             try:
-                if room_type == "private":
-                    destination = private_peer(room_id, session.username)
-                else:
-                    destination = BOT_ROOM if room_type == "bot" else room_id
+                destination = private_peer(room_id, session.username) if room_type == "private" else room_id
             except (ValueError, TypeError) as exc:
                 self.on_error(str(exc))
                 return False
@@ -214,19 +209,14 @@ class NetworkClient(ClientInterface):
             if room_type == "private":
                 room = private_room_id(*message["participants"])
                 private_peer(room, session.username)
-            elif room_type == "bot":
-                room = BOT_ROOM
             elif room_type != "group":
                 raise ValueError("Unsupported chat room type")
-            # Server-confirmed canonical names; older servers omit the field.
-            mentions = message.get("mentions", [])
-            if not isinstance(mentions, list) or not all(isinstance(name, str) for name in mentions):
-                raise ValueError("mentions must be a list of usernames")
             self._emit(session, self.on_message, {
                 "type": kind, "room_type": room_type, "room_id": room,
                 "message_id": message["msg_id"], "sender": message["sender_id"],
                 "text": message["text"], "reply_to": message.get("reply_to"),
-                "timestamp": message["timestamp"], "mentions": list(mentions),
+                "timestamp": message["timestamp"],
+                "mentions": re.findall(r"@(\w+)", message["text"]),
             })
         elif kind == "member_list":
             users = message["members"]

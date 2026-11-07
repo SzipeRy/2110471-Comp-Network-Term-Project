@@ -11,7 +11,6 @@ DISCONNECT_MESSAGE = "!DISCONNECT"
 MEMBERLIST_MESSAGE = "!MEMBERLIST"
 GROUPLIST_MESSAGE = "!GROUPLIST"
 DEFAULT_ROOM = "lobby"
-BOT_ROOM = "chatbot"
 MAX_MESSAGE_BYTES = 1024 * 1024
 
 
@@ -112,12 +111,10 @@ HELP = """Choose a destination before sending:
  /leave <group>       Leave a group
  /lobby              Enter the public lobby (visible to all registered users)
  /reply <id> <text>   Reply within the currently selected conversation
- /bot <question>      Ask the AI chatbot privately (or write @Bot in any chat)
  !MEMBERLIST         List connected usernames
  !DISCONNECT         Disconnect
  /help               Show these commands
-Names can contain spaces; use the full name after the command.
-Write @name to mention someone in the chat; they get a [MENTION] notice."""
+Names can contain spaces; use the full name after the command."""
 
 
 def handle_input(conn, line):
@@ -149,35 +146,27 @@ def handle_input(conn, line):
         if len(parts) != 2:
             raise ValueError("Use /reply <msg_id> <text>")
         send(conn, create_message(parts[1], room=None, room_type=None, reply_to=parts[0]))
-    elif command == "/bot":
-        if not argument:
-            raise ValueError("Use /bot <question>")
-        send(conn, create_message(argument, room=BOT_ROOM, room_type="bot"))
     elif command.startswith("/"):
         raise ValueError("Unknown command; use /help")
     else:
         send(conn, create_message(line, room=None, room_type=None))
 
 
-def receive_messages(conn, disconnected, username=None):
+def receive_messages(conn, disconnected):
     try:
         while True:
             message = receive_message(conn)
             if message.get("type") == "chat_message":
                 reply = f", reply to: {message['reply_to']}" if message['reply_to'] else ""
-                kind = message.get("room_type")
-                if kind == "private":
-                    room = "private: " + ", ".join(message["participants"])
-                else:
-                    room = "bot" if kind == "bot" else "group: " + message["room"]
+                room = (
+                    "private: " + ", ".join(message["participants"])
+                    if message.get("room_type") == "private" else "group: " + message["room"]
+                )
                 print(
                     f"\n[{room}] [{message['sender_id']}] {message['text']}"
                     f" (id: {message['msg_id']}{reply})",
                     flush=True,
                 )
-                sender = message["sender_id"]
-                if username and sender != username and username in message.get("mentions", []):
-                    print(f"\a[MENTION] {sender} mentioned you in {room}", flush=True)
             elif message.get("type") == "group_event":
                 print(f"\n[group: {message['room']}] [SYSTEM] {message['text']}", flush=True)
             elif message.get("type") == "error":
@@ -232,7 +221,7 @@ def main():
             print(f"[REGISTERED] as {username}", flush=True)
             print(HELP, flush=True)
             receiver = threading.Thread(
-                target=receive_messages, args=(client, disconnected, username), daemon=True
+                target=receive_messages, args=(client, disconnected), daemon=True
             )
             receiver.start()
             try:

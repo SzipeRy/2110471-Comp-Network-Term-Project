@@ -1,6 +1,6 @@
 ﻿# TCP JSON message protocol
 
-`backend/server.py`, the terminal client `frontend/client.py`, and the Tkinter adapter `frontend/network_client.py` support registered users, private conversations, group chats, `@username` mentions, and an AI chatbot. Launch the real UI with `python -m frontend.ui.app --real`; its default mode remains an offline mock demonstration.
+`backend/server.py`, the terminal client `frontend/client.py`, and the Tkinter adapter `frontend/network_client.py` support registered users, private conversations, and group chats. Launch the real UI with `python -m frontend.ui.app --real`; its default mode remains an offline mock demonstration.
 
 ## Framing and limits
 
@@ -18,7 +18,7 @@ Restart the server and clients together after updating. Saving a file does not r
 {"type": "register", "username": "Alice"}
 ```
 
-The server trims surrounding whitespace and normalizes the name to Unicode NFC. The result must contain 1-20 printable Unicode code points (`len(name)` in Python). Empty names, embedded control characters, and the reserved names `server` and `Bot` (the chatbot, in any capitalization) are rejected. Names are unique among connected clients after `casefold()` comparison, while accepted spelling and capitalization are preserved.
+The server trims surrounding whitespace and normalizes the name to Unicode NFC. The result must contain 1-20 printable Unicode code points (`len(name)` in Python). Empty names, embedded control characters, and the reserved name `server` are rejected. Names are unique among connected clients after `casefold()` comparison, while accepted spelling and capitalization are preserved.
 
 The server confirms registration only to that client:
 
@@ -50,7 +50,6 @@ Registration makes the client a member of the public `lobby`, but the terminal h
 | `/leave <group>` | Leave a group. If selected, clear the outgoing destination. |
 | `/lobby` | Select the public lobby. Messages here are visible to all registered clients. |
 | `/reply <msg_id> <text>` | Send a reply in the selected conversation. |
-| `/bot <question>` | Ask the AI chatbot in your private chatbot room. The selected conversation is unchanged. |
 | `!MEMBERLIST` | List all connected, registered usernames, including yourself. |
 | `!DISCONNECT` | Close the connection. |
 | `/help` | Display the command guide locally. |
@@ -64,16 +63,15 @@ The server processes commands and chat text in order on each connection. Failed 
 | Field | Meaning |
 |---|---|
 | `type` | `"chat_message"` for chat. |
-| `room_type` | `"group"`, `"private"`, or `"bot"` (the sender's private chatbot room); `null` together with `room: null` uses the server-selected conversation. This field distinguishes destinations even if a group and user have the same name. |
-| `room` | Group name for group requests; recipient username for explicit private requests; `"chatbot"` for the chatbot room. Private broadcasts instead contain the server's opaque conversation ID. |
+| `room_type` | `"group"` or `"private"`; `null` together with `room: null` uses the server-selected conversation. This field distinguishes destinations even if a group and user have the same name. |
+| `room` | Group name for group requests; recipient username for explicit private requests. Private broadcasts instead contain the server's opaque conversation ID. |
 | `msg_id` | Server-generated UUID4 hexadecimal string; client placeholder is `null`. |
-| `sender_id` | Server-confirmed registered username, or `"Bot"` for the chatbot's answers; client placeholder is `null`. |
+| `sender_id` | Server-confirmed registered username; client placeholder is `null`. |
 | `text` | Message text, including an empty string if desired. |
 | `reply_to` | A recent message ID in the same conversation, or `null`. |
 | `timestamp` | Server receipt time as ISO-8601 UTC with milliseconds; client placeholder is `null`. |
-| `mentions` | Server-derived list of canonical usernames written as `@name` in `text` (see Mentions below); added to every chat broadcast, often empty. Requests do not need it. |
 
-The server replaces any client claims about IDs, sender identity, timestamps, or mentions. Client-supplied recipient lists, participants, and extra metadata cannot grant access or alter delivery. Every authorized recipient, including the sender, receives the same broadcast object.
+The server replaces any client claims about IDs, sender identity, or timestamps. Client-supplied recipient lists, participants, and extra metadata cannot grant access or alter delivery. Every authorized recipient, including the sender, receives the same broadcast object.
 
 ### Send to the selected conversation
 
@@ -221,55 +219,6 @@ membership during registration.
 
 There is no message-history download or quoted-content lookup. A new group member does not receive earlier messages. Private and group chat text is not written into the server's shared console log.
 
-## Mentions
-
-For every chat message, the server lists who the text mentions in `mentions`: the
-canonical spelling of each connected username, or `Bot`, written after `@`.
-Clients use it to highlight names and notify the mentioned user; the server
-ignores any `mentions` a client sends. The rule (`backend/mentions.py`, mirrored
-for highlighting in `frontend/ui/mentions.py`):
-
-- Names are compared ignoring case (`casefold()`), after NFC normalization.
-- `@` must start the text or follow a character that is not a letter, digit,
-  combining mark, or `_`, so `alice@example.com` mentions nobody.
-- The longest matching name wins: `@Bob Smith` mentions `Bob Smith`, not `Bob`.
-- A name ending in a letter, digit, combining mark, or `_` must not be followed
-  by another such character: `@Bobby` does not mention `Bob`; `@Bob,` and `@Bob😀` do.
-- The list is unique and sorted with `casefold()`.
-
-Mentions never change delivery. Mentioning a connected user who is not in the
-private or group chat lists them in `mentions`, but they neither receive the
-message nor a notification. Messages from `Bot` mention users but never the bot itself.
-
-## AI chatbot
-
-Each registered user has a private chatbot room. Ask it with a chat message:
-
-```json
-{"type": "chat_message", "room_type": "bot", "room": "chatbot", "text": "What is TCP?", "reply_to": null}
-```
-
-`room` is optional for bot requests. The server echoes the question only to the
-sender (`room_type: "bot"`, `room: "chatbot"`), then answers from a worker thread
-with a chat message from `sender_id: "Bot"` in the same room. The text must
-contain 1-4,000 characters and something other than whitespace. The room
-remembers the last 20 messages of the connection as context; replies
-(`reply_to`) must refer to messages in that room. Bot rooms cannot be selected
-with `select_chat`.
-
-Writing `@Bot` in a private or group chat delivers the message normally and then
-asks the bot about that one message. The bot's answer is a chat message in the
-same conversation with `reply_to` set to the question's `msg_id`, delivered to
-the conversation's current members only. Members can reply to bot answers.
-
-Each user has at most one unanswered bot question across all rooms. A bot-room
-question sent meanwhile is rejected with `bot_busy` and not echoed; an `@Bot`
-message is still delivered, followed by a `bot_busy` error to its sender. AI
-failures (no key, network, rate limit) arrive as a normal answer from `Bot`
-explaining the problem. Questions and answers are sent to the AI service from
-the server over HTTPS; see [CHATBOT_AND_MENTIONS.md](CHATBOT_AND_MENTIONS.md)
-for the model, prompt, and configuration.
-
 ## Disconnect and errors
 
 ```json
@@ -295,10 +244,9 @@ Errors are sent only to the requester using the standard envelope with `type: "e
 | `user_not_found` | The private recipient is not connected. |
 | `unsupported_room_type` | Use `private` or `group`. |
 | `chat_not_selected` | Choose a valid destination before sending implicit chat text. |
-| `invalid_message` | Invalid text or reply-reference type/length, or a chatbot question that is empty or longer than 4,000 characters. |
+| `invalid_message` | Invalid text or reply-reference type/length. |
 | `invalid_reply` | Reply ID is unavailable or belongs to another conversation. |
 | `message_too_large` | The final JSON exceeds 1 MiB. |
-| `bot_busy` | The chatbot is still answering your previous question. |
 
 Malformed headers, invalid lengths, invalid UTF-8/JSON, non-object JSON, and truncated frames close only the offending connection.
 
@@ -328,6 +276,7 @@ updated through the application's queue on the Tk main thread. Quotes use only
 messages received in that local tab; unavailable originals have a placeholder.
 The client does not manufacture IDs or display optimistic duplicates.
 
-The adapter maps chatbot-room messages to the UI room `("bot", "chatbot")` and
-passes the server's `mentions` through unchanged. Persistent accounts/history
-and invitation-only groups remain future work.
+Chatbot integration, persistent accounts/history, and invitation-only groups
+remain future work. Mention highlighting retains the existing `@word` matching;
+mention behavior for usernames containing spaces or punctuation still needs
+Person 3's agreed rules.

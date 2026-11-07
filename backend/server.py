@@ -1,20 +1,11 @@
 ﻿import argparse
 from collections import OrderedDict
-from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
-import os
-from pathlib import Path
 import socket
 import threading
 import unicodedata
 import uuid
-
-if __package__:
-    from . import chatbot, mentions
-else:  # python backend/server.py
-    import chatbot
-    import mentions
 
 HEADER = 64
 PORT = 5050
@@ -35,16 +26,6 @@ private_rooms = {}
 reply_references = OrderedDict()
 group_event_clients = set()
 clients_lock = threading.Lock()
-
-# Chatbot state, also per connection. Each user has one bot conversation (text only)
-# and at most one unanswered bot request; AI calls run outside the socket handlers.
-RESERVED_NAMES = {"server", chatbot.BOT_NAME.casefold()}
-bot_sessions = {}
-bot_history = {}
-bot_pending = set()
-bot_slots = threading.BoundedSemaphore(4)  # concurrent AI requests for all users
-assistant = chatbot.Chatbot()
-BOT_BUSY = "The chatbot is still answering your previous message"
 
 
 class RequestError(ValueError):
@@ -114,8 +95,8 @@ def normalized_name(value, limit, code, label):
 
 def register_client(conn, requested_name, group_events=False):
     name = normalized_name(requested_name, MAX_USERNAME_LENGTH, "invalid_username", "Username")
-    if name.casefold() in RESERVED_NAMES:
-        raise RequestError("invalid_username", f"The username '{name}' is reserved")
+    if name.casefold() == "server":
+        raise RequestError("invalid_username", "The username 'server' is reserved")
     with clients_lock:
         send_lock = clients.get(conn)
     if send_lock is None:
@@ -144,9 +125,6 @@ def remove_client(conn):
         group_event_clients.discard(conn)
         usernames.pop(conn, None)
         active_chats.pop(conn, None)
-        bot_sessions.pop(conn, None)
-        bot_history.pop(conn, None)
-        bot_pending.discard(conn)
         for key, group in list(groups.items()):
             group["members"].discard(conn)
             if key != DEFAULT_ROOM and not group["members"]:
@@ -332,33 +310,7 @@ def authorized(conn, context):
         return False
     if context[0] == "group":
         return any(g["id"] == context[1] and conn in g["members"] for g in groups.values())
-    if context[0] == "bot":
-        return bot_sessions.get(conn) == context[1]
     return any(room_id == context[1] and conn in pair for pair, room_id in private_rooms.items())
-
-
-def remember_reply(msg_id, context):
-    reply_references[msg_id] = context
-    while len(reply_references) > MAX_REPLY_REFERENCES:
-        reply_references.popitem(last=False)
-
-
-def mention_names(text):
-    # Runs while clients_lock is held. Mentions are metadata; they never add recipients.
-    return mentions.find_mentions(text, [*usernames.values(), chatbot.BOT_NAME])
-
-
-def deliver(frame, context, recipients):
-    """Send one frame to each recipient that is still authorized for the conversation."""
-    for recipient, send_lock in recipients:
-        try:
-            with send_lock:
-                with clients_lock:
-                    allowed = authorized(recipient, context)
-                if allowed:
-                    recipient.sendall(frame)
-        except OSError:
-            remove_client(recipient)
 
 
 def route_message(conn, message):
@@ -367,9 +319,6 @@ def route_message(conn, message):
         reply_to is None or isinstance(reply_to, str) and 0 < len(reply_to) <= 128
     ):
         raise RequestError("invalid_message", "text must be a string; reply_to must be null or a message ID (1-128 characters)")
-    if message.get("room_type") == "bot":
-        route_bot_message(conn, text, reply_to)
-        return
     with clients_lock:
         if conn not in usernames:
             raise RequestError("registration_required", "Register before sending messages")
@@ -392,118 +341,24 @@ def route_message(conn, message):
         outgoing["room_type"] = kind
         if kind == "private":
             outgoing["participants"] = sorted((usernames[s] for s in recipients), key=str.casefold)
-        outgoing["mentions"] = mention_names(text)
         try:
             frame = encode_message(outgoing)
         except ValueError as exc:
             raise RequestError("message_too_large", str(exc)) from exc
-        remember_reply(outgoing["msg_id"], context)
+        reply_references[outgoing["msg_id"]] = context
+        while len(reply_references) > MAX_REPLY_REFERENCES:
+            reply_references.popitem(last=False)
         recipient_locks = [(s, clients[s]) for s in recipients if s in clients]
-        # "@Bot" asks the chatbot; it answers everyone in this conversation.
-        wants_bot = chatbot.BOT_NAME in outgoing["mentions"]
-        bot_free = wants_bot and conn not in bot_pending
-        if bot_free:
-            bot_pending.add(conn)
-            request = BotRequest(conn, context, usernames[conn], bot_place(kind, room, recipients),
-                                 [{"role": "user", "content": text}], outgoing["msg_id"], remember=False)
-    deliver(frame, context, recipient_locks)
+    for recipient, send_lock in recipient_locks:
+        try:
+            with send_lock:
+                with clients_lock:
+                    allowed = authorized(recipient, context)
+                if allowed:
+                    recipient.sendall(frame)
+        except OSError:
+            remove_client(recipient)
     # Do not put private/group message contents in the server's shared console log.
-    if bot_free:
-        start_bot(request)
-    elif wants_bot:
-        send_error(conn, "bot_busy", BOT_BUSY)
-
-
-@dataclass(frozen=True)
-class BotRequest:
-    requester: socket.socket
-    context: tuple
-    asker: str
-    place: str
-    conversation: list
-    reply_to: str | None
-    remember: bool  # keep the exchange as context (only in the private chatbot room)
-
-
-def bot_place(kind, room, recipients):
-    # Runs while clients_lock is held. Tells the AI who can read its answer.
-    if kind == "group":
-        return f"the group chat #{room}, where every member can read your answer"
-    names = sorted((usernames[s] for s in recipients), key=str.casefold)
-    return f"a private chat between {' and '.join(names)}, where both of them can read your answer"
-
-
-def route_bot_message(conn, text, reply_to):
-    """A message in the requester's private chatbot room: echo it, then ask the AI."""
-    if not text.strip() or len(text) > chatbot.MAX_QUESTION_CHARS:
-        raise RequestError("invalid_message", f"Ask the chatbot in 1-{chatbot.MAX_QUESTION_CHARS} characters")
-    with clients_lock:
-        if conn not in usernames:
-            raise RequestError("registration_required", "Register before sending messages")
-        if conn in bot_pending:
-            raise RequestError("bot_busy", BOT_BUSY)
-        context = ("bot", bot_sessions.setdefault(conn, uuid.uuid4().hex))
-        if reply_to is not None and reply_references.get(reply_to) != context:
-            raise RequestError("invalid_reply", "Reply must reference a recent message in this conversation")
-        outgoing = server_message("chat_message", usernames[conn], text, chatbot.BOT_ROOM, reply_to)
-        outgoing["room_type"] = "bot"
-        outgoing["mentions"] = mention_names(text)
-        frame = encode_message(outgoing)  # the question limit keeps this far below 1 MiB
-        remember_reply(outgoing["msg_id"], context)
-        bot_pending.add(conn)
-        conversation = [*bot_history.get(conn, ()), {"role": "user", "content": text}]
-        request = BotRequest(conn, context, usernames[conn], "their private chatbot room",
-                             conversation, None, remember=True)
-        recipients = [(conn, clients[conn])]
-    deliver(frame, context, recipients)
-    start_bot(request)
-
-
-def start_bot(request):
-    # One daemon thread per question, like one per client: the AI call never blocks I/O.
-    threading.Thread(target=answer_bot, args=(request,), daemon=True).start()
-
-
-def answer_bot(request):
-    try:
-        with bot_slots:
-            text, ok = assistant.reply(request.conversation, request.asker, request.place)
-    except Exception as exc:  # reply() reports AI errors itself; never leave a user waiting
-        print(f"[BOT ERROR] {type(exc).__name__}", flush=True)
-        text, ok = chatbot.FAILED, False
-    text = text[:chatbot.MAX_ANSWER_CHARS]
-    with clients_lock:
-        # Ready for the next question before the answer is sent, so a fast reply cannot be refused.
-        bot_pending.discard(request.requester)
-        if request.remember and ok and bot_sessions.get(request.requester) == request.context[1]:
-            history = [*request.conversation, {"role": "assistant", "content": text}]
-            bot_history[request.requester] = history[-chatbot.MAX_HISTORY_MESSAGES:]
-        prepared = bot_answer(request.context, text, request.reply_to)
-    if prepared is not None:
-        deliver(*prepared)
-
-
-def bot_answer(context, text, reply_to):
-    """Runs while clients_lock is held: the bot's chat message and its current recipients."""
-    kind, ident = context
-    if kind == "group":
-        group = next((g for g in groups.values() if g["id"] == ident), None)
-        members, room = (set(group["members"]), group["name"]) if group else (set(), None)
-    elif kind == "private":
-        members = next((set(pair) for pair, room_id in private_rooms.items() if room_id == ident), set())
-        room = ident
-    else:
-        members = {conn for conn, session in bot_sessions.items() if session == ident}
-        room = chatbot.BOT_ROOM
-    if not members:
-        return None  # the asker disconnected, or the conversation no longer exists
-    answer = server_message("chat_message", chatbot.BOT_NAME, text, room, reply_to)
-    answer["room_type"] = kind
-    if kind == "private":
-        answer["participants"] = sorted((usernames[s] for s in members), key=str.casefold)
-    answer["mentions"] = mentions.find_mentions(text, list(usernames.values()))
-    remember_reply(answer["msg_id"], context)
-    return encode_message(answer), context, [(s, clients[s]) for s in members if s in clients]
 
 
 def handle_client(conn, addr):
@@ -557,21 +412,10 @@ def start(host=SERVER, port=PORT):
 
 
 def main():
-    global assistant
-    # An optional .env file in the project folder can hold ANTHROPIC_API_KEY.
-    chatbot.load_env_file(Path(__file__).resolve().parent.parent / ".env")
     parser = argparse.ArgumentParser(description="TCP private and group chat server")
     parser.add_argument("--host", default=SERVER)
     parser.add_argument("--port", type=int, default=PORT)
-    parser.add_argument("--bot", default=os.environ.get("CHATBOT_PROVIDER", "claude"),
-                        help="chatbot provider: claude (default, needs ANTHROPIC_API_KEY) "
-                             "or echo (offline test replies)")
     args = parser.parse_args()
-    try:
-        assistant = chatbot.Chatbot(args.bot)
-    except ValueError as exc:
-        parser.error(str(exc))
-    print(f"[CHATBOT] {assistant.describe()}", flush=True)
     try:
         start(args.host, args.port)
     except KeyboardInterrupt:

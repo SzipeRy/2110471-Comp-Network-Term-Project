@@ -30,8 +30,12 @@ client using `python -m frontend.ui.app --real`.
 - **Physical two-computer LAN acceptance:** not run. Repeat the documented cases
   on the team's two devices, including a third client for privacy checks, and
   record the actual network/device evidence.
-- **Real chatbot transport and AI integration, expanded mentions:** since done
-  by Person 3; see [CHATBOT_AND_MENTIONS.md](CHATBOT_AND_MENTIONS.md).
+- **Real chatbot transport and AI integration:** blocked on Persons 1 and 3 for
+  the request/response contract and server/model implementation. Real mode shows
+  the chatbot as unavailable; mock mode remains a demonstration.
+- **Expanded mentions:** Person 3 still needs to define behavior for usernames
+  containing spaces/punctuation, notifications, and mentions in replies. Existing
+  `@word` highlighting is retained.
 - **Final presentation:** Person 2 still needs to select final UI/demo screenshots;
   local visual evidence is available, with LAN demo evidence still outstanding.
 

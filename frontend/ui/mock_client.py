@@ -1,11 +1,11 @@
 """Fake backend so the UI can be built and demoed with no server."""
 import datetime
+import re
 import threading
 import time
 import uuid
 
-from .mentions import find_mentions
-from .net_interface import BOT_NAME, BOT_ROOM, ClientInterface, GroupInfo, NameTakenError, private_peer
+from .net_interface import ClientInterface, GroupInfo, NameTakenError, private_peer
 
 
 class MockClient(ClientInterface):
@@ -35,24 +35,20 @@ class MockClient(ClientInterface):
                         for g, m in self.groups.items()})
 
     def _msg(self, room_type, room_id, sender, text, reply_to=None):
-        # Like the real server: mentions are the known names written as @name.
         return {"type": "chat_message", "room_type": room_type, "room_id": room_id,
                 "message_id": uuid.uuid4().hex[:8], "sender": sender, "text": text,
-                "reply_to": reply_to, "mentions": find_mentions(text, [*self.users, BOT_NAME]),
+                "reply_to": reply_to, "mentions": re.findall(r"@(\w+)", text),
                 "timestamp": datetime.datetime.now().isoformat(timespec="seconds")}
 
     def send_message(self, room_type, room_id, text, reply_to=None):
         m = self._msg(room_type, room_id, self.me, text, reply_to)
         self.on_message(m)  # server echo
-        threading.Thread(target=self._fake_reply, args=(room_type, room_id, text, m), daemon=True).start()
+        threading.Thread(target=self._fake_reply, args=(room_type, room_id, text), daemon=True).start()
 
-    def _fake_reply(self, room_type, room_id, text, question):
+    def _fake_reply(self, room_type, room_id, text):
         time.sleep(0.8)
         if room_type == "bot":
-            self.on_message(self._msg("bot", BOT_ROOM, BOT_NAME, f"(mock AI) You said: {text}"))
-        elif BOT_NAME in question["mentions"]:
-            answer = f"(mock AI) {self.me} asked me: {text}"
-            self.on_message(self._msg(room_type, room_id, BOT_NAME, answer, question["message_id"]))
+            self.on_message(self._msg("bot", "chatbot", "Bot", f"(mock AI) You said: {text}"))
         elif room_type == "private":
             other = private_peer(room_id, self.me)
             self.on_message(self._msg("private", room_id, other, "Got it 👍"))

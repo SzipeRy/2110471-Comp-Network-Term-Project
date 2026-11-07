@@ -90,9 +90,7 @@ class BroadcastChatTests(unittest.TestCase):
             self.assertEqual(message, received[0])
             self.assertEqual(set(message), {
                 "type", "room", "room_type", "msg_id", "sender_id", "text", "reply_to", "timestamp",
-                "mentions",
             })
-            self.assertEqual(message["mentions"], [])
             self.assertEqual(message["type"], "chat_message")
             self.assertEqual(message["room"], "lobby")
             self.assertEqual(message["sender_id"], self.names[sender])

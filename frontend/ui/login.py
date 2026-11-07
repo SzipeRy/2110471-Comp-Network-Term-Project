@@ -3,10 +3,8 @@ import threading
 import tkinter as tk
 import unicodedata
 
-from .net_interface import BOT_NAME, NameTakenError
+from .net_interface import NameTakenError
 from . import theme as T
-
-RESERVED_NAMES = {"server", BOT_NAME.casefold()}
 
 
 def _default_host():
@@ -54,9 +52,8 @@ class LoginFrame(tk.Frame):
         if self.btn.cget("state") == "disabled":
             return
         name = unicodedata.normalize("NFC", self.name.get().strip())
-        if not 1 <= len(name) <= 20 or not name.isprintable() or name.casefold() in RESERVED_NAMES:
-            self._show(f"Username: 1–20 printable characters; 'server' and '{BOT_NAME}' are reserved",
-                       error=True)
+        if not 1 <= len(name) <= 20 or not name.isprintable() or name.casefold() == "server":
+            self._show("Username: 1–20 printable characters; 'server' is reserved", error=True)
             return
         try:
             port = int(self.port.get())

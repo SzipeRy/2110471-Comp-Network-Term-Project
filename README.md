@@ -58,7 +58,7 @@ With the environment activated:
 python -m pip install -r requirements.txt
 ```
 
-This installs Flask, the Anthropic SDK (used only by the server's AI chatbot), and their dependencies. Python's `socket` module is included in Python. Tkinter normally comes with the official Windows Python installation; neither needs to be installed with pip.
+This installs Flask and its dependencies. Python's `socket` module is included in Python. Tkinter normally comes with the official Windows Python installation; neither needs to be installed with pip.
 
 ## 5. Verify Flask and Tkinter
 
@@ -87,9 +87,7 @@ The Tkinter command should open a small demonstration window. Close it when fini
 ```text
 2110471-Comp-Network-Term-Project/
 |-- backend/
-|   |-- server.py
-|   |-- chatbot.py       # AI chatbot (Claude API), called by the server
-|   `-- mentions.py      # @username rule
+|   `-- server.py
 |-- frontend/
 |   |-- client.py        # Working terminal chat client
 |   |-- network_client.py # Real Tkinter TCP adapter
@@ -101,7 +99,6 @@ The Tkinter command should open a small demonstration window. Close it when fini
 |-- requirements.txt   # Shared Python dependencies
 |-- project_plan.md
 |-- MESSAGE_PROTOCOL.md # JSON fields and TCP framing
-|-- CHATBOT_AND_MENTIONS.md # AI chatbot and @mention features
 `-- README.md
 ```
 
@@ -140,7 +137,6 @@ After registration, choose a private conversation or group before sending text. 
 | `/leave Study` | Leave a group and stop receiving its messages. |
 | `/lobby` | Enter the public lobby, visible to every registered user. |
 | `/reply <msg_id> <text>` | Reply to a recent message in the selected conversation. |
-| `/bot <question>` | Ask the AI chatbot privately. Write `@Bot` in a chat to ask it there. |
 | `!DISCONNECT` | Disconnect. |
 
 For example, Alice types `/create Study`, Bob types `/join Study`, and they can then exchange ordinary text. Carol receives none of those messages until she explicitly joins Study. Alice can switch to `/private Bob` for messages delivered only to Alice and Bob, then `/group Study` to return to the group. Names with spaces are supported: `/private Bob Smith` or `/create Study Team`.
@@ -201,13 +197,8 @@ sent before you joined, its quote reads **Original message unavailable**.
 Leaving a group disables sending there. Closing a tab preserves its local
 messages and does not leave the group. Closing the application disconnects;
 reconnecting starts a new session without earlier message history. If the server
-disconnects, the application returns to login.
-
-Type `@` to mention someone: a list of the chat's members (and `🤖 @Bot`)
-appears; pick with Up/Down and Enter, Tab, or a click. A mentioned user sees
-their name highlighted, an `@` on the chat's tab, and a notification bar with
-**Open**. Click **🤖 Chatbot** in the sidebar for a private AI chat, or write
-`@Bot` in any chat to let everyone there see the answer.
+disconnects, the application returns to login. The real server does not implement
+the AI chatbot yet, so real mode shows **Chatbot unavailable**.
 
 For an offline UI demonstration with simulated messages:
 
@@ -218,23 +209,6 @@ python -m frontend.ui.app
 The older launch form, `python -m ui.app --real` from `frontend/`, also works.
 See [PERSON4_STATUS.md](PERSON4_STATUS.md) for the bug list, test evidence, and
 the remaining two-computer acceptance checklist.
-
-### Set up the AI chatbot
-
-Only the server computer needs a Claude API key. Before starting the server:
-
-```powershell
-$env:ANTHROPIC_API_KEY = "sk-ant-..."
-python backend/server.py
-```
-
-On macOS or Linux use `export ANTHROPIC_API_KEY="sk-ant-..."`. Alternatively,
-put `ANTHROPIC_API_KEY=sk-ant-...` in a `.env` file in this folder (Git ignores
-it). Without a key the chat still works and the bot explains how to configure
-it. For an offline demonstration, `python backend/server.py --bot echo` makes
-the bot repeat each question instead of calling the AI. See
-[CHATBOT_AND_MENTIONS.md](CHATBOT_AND_MENTIONS.md) for the model, prompt,
-settings, and privacy notes.
 
 ## Check the project without running Python on your computer
 
@@ -258,9 +232,8 @@ Run the loopback integration tests:
 python -m unittest discover -s tests -v
 ```
 
-The suite includes terminal/server tests, real network-adapter tests, hidden
-Tkinter integration tests, and chatbot/mention tests that use an offline bot or
-a local fake of the Claude API (no key or internet needed). The GUI tests require Tkinter and an available desktop
+The suite includes terminal/server tests, real network-adapter tests, and hidden
+Tkinter integration tests. The GUI tests require Tkinter and an available desktop
 display; they are skipped if a Tk display cannot be initialized. They do not
 replace acceptance testing on two physical computers.
 
