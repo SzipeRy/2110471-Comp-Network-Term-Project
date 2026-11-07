@@ -8,19 +8,22 @@ same TCP socket protocol as the rest of the chat.
 ## Try it
 
 1. On the **server computer** only, install the requirements and give the server
-   a Claude API key. Clients need no key.
+   a Gemini API key. Clients need no key. Get a free key at
+   <https://aistudio.google.com/apikey>: sign in with a Google account, accept
+   the terms, and copy the key that AI Studio creates.
 
    ```powershell
    python -m pip install -r requirements.txt
-   $env:ANTHROPIC_API_KEY = "sk-ant-..."      # PowerShell, this terminal only
+   $env:GEMINI_API_KEY = "your-key"           # PowerShell, this terminal only
    python backend/server.py
    ```
 
-   macOS/Linux: `export ANTHROPIC_API_KEY="sk-ant-..."`. Or create a file named
-   `.env` next to `requirements.txt` containing `ANTHROPIC_API_KEY=sk-ant-...`;
+   macOS/Linux: `export GEMINI_API_KEY="your-key"`. Or create a file named
+   `.env` next to `requirements.txt` containing `GEMINI_API_KEY=your-key`;
    the server reads it at startup and `.gitignore` keeps it out of Git. The
-   server prints `[CHATBOT] Claude claude-opus-5-5 (effort low)` and warns if
-   no key is set.
+   server prints `[CHATBOT] Gemini gemini-3.5-flash-lite` and warns if no key
+   is set. To use Claude instead, set `CHATBOT_PROVIDER=claude` and
+   `ANTHROPIC_API_KEY`.
 2. Start clients as usual: `python -m frontend.ui.app --real`.
 3. Without internet or a key, run `python backend/server.py --bot echo`: the bot
    then repeats each question instead of calling the AI, so the rest of the demo
@@ -49,7 +52,7 @@ highlighted. Carol, who is not in `#Study`, receives none of these messages.
 ### How it works
 
 ```text
-Tkinter / terminal client ──TCP: 64-byte header + JSON──▶ chat server ──HTTPS──▶ Claude API
+Tkinter / terminal client ──TCP: 64-byte header + JSON──▶ chat server ──HTTPS──▶ Gemini API (or Claude API)
                           ◀──────── chat_message ──────── (worker thread)  ◀──────
 ```
 
@@ -67,21 +70,31 @@ Tkinter / terminal client ──TCP: 64-byte header + JSON──▶ chat server 
 
 ### Model, settings and prompt
 
-| Setting | Value | Why |
+`CHATBOT_PROVIDER` (or `--bot`) picks the AI service: `gemini` (default),
+`claude`, or `echo` (offline, not AI). Everything else is the same for both.
+
+| Setting | Gemini (default) | Claude |
 |---|---|---|
-| API | Claude Messages API via the official `anthropic` Python SDK | Called from `backend/chatbot.py` |
-| Model | `claude-opus-5-5` (`CHATBOT_MODEL` to change) | Current default Claude model |
-| Effort | `low` (`CHATBOT_EFFORT`: low, medium, high, xhigh, max) | Chat answers should arrive quickly |
-| `max_tokens` | 16000 | The model's thinking counts toward it, so leave room |
-| Fallbacks | `fallbacks: "default"` with beta `server-side-fallback-2026-07-01` | If a safety classifier declines a request, the API retries it on its recommended model in the same call |
-| Timeout | 60 s per attempt, 2 automatic retries | Bounded wait instead of the SDK's 10-minute default |
+| API | `generateContent` REST API over HTTPS, using Python's `urllib` (no extra package) | Messages API via the official `anthropic` SDK |
+| Key | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | `ANTHROPIC_API_KEY` |
+| Model (`CHATBOT_MODEL`) | `gemini-3.5-flash-lite`: stable, has a free tier, quick (minimal thinking by default) | `claude-opus-5-5` |
+| Reasoning | The model's default | `effort: low` (`CHATBOT_EFFORT`: low, medium, high, xhigh, max) |
+| Output limit | The model's default | `max_tokens` 16000, since thinking counts toward it |
+| Declined requests | A blocked question or answer becomes "Sorry, I can't help with that request." | Same, after `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) lets the API retry on its recommended model |
+| Timeout and retries | 60 s per attempt; up to 2 retries after a 5xx error | 60 s per attempt; the SDK's 2 automatic retries |
+
+Gemini's free tier needs no payment. Its limits belong to the Google Cloud
+project behind the key; AI Studio shows them at
+<https://aistudio.google.com/rate-limit>. When they run out, the bot says the free
+quota is used up. `CHATBOT_MODEL=gemini-3.6-flash` gives stronger but slower
+answers.
 
 Context: the chatbot room remembers the last 20 messages (10 questions and
 answers) of that connection, as text, and forgets them on disconnect. An `@Bot`
 question in another chat is answered on its own: the server does not store chat
-history, so the bot sees only that message. Only the answer **text** is kept;
-the model's thinking blocks are not replayed, so dropping the oldest turns can
-never invalidate them.
+history, so the bot sees only that message. Only the answer **text** is kept and
+sent back; the model's thinking is never replayed, so dropping the oldest turns
+cannot break it.
 
 System prompt (`backend/chatbot.py`), followed by "You are talking with
 <name> in <place>.", where the place says who can read the answer:
@@ -106,9 +119,10 @@ System prompt (`backend/chatbot.py`), followed by "You are talking with
 
 | Situation | What the user sees |
 |---|---|
-| No API key on the server | The bot answers that the server operator must set `ANTHROPIC_API_KEY` |
-| `anthropic` package missing on the server | The bot answers with the `pip install -r requirements.txt` command |
-| Key rejected, rate limit, no internet, API error | A short bot answer explaining it; nothing crashes; the server logs only the error type |
+| No API key on the server | The bot answers that the server operator must set `GEMINI_API_KEY` (`ANTHROPIC_API_KEY` for Claude) |
+| `anthropic` package missing on the server (Claude only) | The bot answers with the `pip install -r requirements.txt` command |
+| Free Gemini quota used up | The bot asks to try again in a minute, or tomorrow if the daily limit is reached |
+| Key rejected, unknown model, rate limit, no internet, API error | A short bot answer explaining it; nothing crashes; the server logs only the error type and HTTP status |
 | Request declined by the model | "Sorry, I can't help with that request." |
 | A second question before the first answer | Error `bot_busy`; the desktop app keeps the draft until the answer arrives |
 | Empty question or more than 4,000 characters | Error `invalid_message` |
@@ -116,7 +130,9 @@ System prompt (`backend/chatbot.py`), followed by "You are talking with
 
 **Privacy:** only text written in the chatbot room, or a message that mentions
 `@Bot`, is sent to the AI service. Other private and group messages never leave
-the server, and the server console logs no message text.
+the server, and the server console logs no message text. On Gemini's free tier,
+Google's pricing page says the data is "used to improve our products" (the paid
+tier is not), so nobody should send the bot anything private.
 
 ## Feature 2: @username mentions
 
@@ -158,7 +174,7 @@ The UI uses the same rule only to locate the names for highlighting
 
 | File | Change |
 |---|---|
-| `backend/chatbot.py` | New: Claude client, prompt, settings, error messages, offline echo provider, `.env` loading |
+| `backend/chatbot.py` | New: Gemini (default) and Claude clients, prompt, settings, error messages, offline echo provider, `.env` loading |
 | `backend/mentions.py` | New: the server's mention rule |
 | `backend/server.py` | `mentions` on every chat message; bot room; `@Bot` answers; worker threads; reserved name `Bot`; `--bot` option |
 | `frontend/network_client.py` | Bot room enabled; server `mentions` passed to the UI |
@@ -169,13 +185,13 @@ The UI uses the same rule only to locate the names for highlighting
 ## Tests
 
 Run all tests with `python -m unittest discover -s tests -v`. No test uses the
-network or a real key: the server runs the offline echo provider, or Claude
-against a local fake Messages API that records each request.
+network or a real key: the server runs the offline echo provider, or Gemini or
+Claude against a local fake API that records each request.
 
 | File | Covers |
 |---|---|
 | `tests/test_mentions.py` | Rule examples (case, longest name, Thai/emoji, emails), server/UI parity, server-derived and unforgeable `mentions`, mentions never add recipients, adapter, terminal notice |
-| `tests/test_chatbot.py` | Private bot room and history, `@Bot` in groups and private chats, privacy, reserved name, validation, terminal `/bot`, exact Claude request (model, effort, fallbacks, text-only history), API errors, refusals, `bot_busy` |
+| `tests/test_chatbot.py` | Private bot room and history, `@Bot` in groups and private chats, privacy, reserved name, validation, terminal `/bot`, exact Gemini request (path, key header, system instruction, text-only history), exact Claude request (model, effort, fallbacks), missing key, no connection, quota and API errors, blocked answers, retries, `bot_busy` |
 | `tests/test_person3_ui.py` | Hidden Tk windows: highlight, `@` tab marker, notification bar, autocomplete (also Thai and emoji), privacy hint, typing indicator, one question at a time, reserved name at login |
 
 Screenshots of each state, taken from the real app on macOS, are in
@@ -186,8 +202,9 @@ Screenshots of each state, taken from the real app on macOS, are in
 - **TCP** carries every chat and chatbot message between clients and the server,
   framed as a 64-byte length header plus UTF-8 JSON. Chat needs ordered,
   reliable delivery, so a lost or reordered question or answer is not acceptable.
-- **HTTPS (HTTP over TLS over TCP)** carries the server's requests to the Claude
-  API. TLS encrypts the API key and the question on the internet; HTTP is the
+- **HTTPS (HTTP over TLS over TCP)** carries the server's requests to the AI
+  service: a `POST` with a JSON body to `generativelanguage.googleapis.com` for
+  Gemini. TLS encrypts the API key and the question on the internet; HTTP is the
   API's interface; DNS resolves the API's host name first.
 - The server is the bridge: it receives a question over the chat socket, makes an
   HTTPS request from a worker thread, and sends the answer back over the socket

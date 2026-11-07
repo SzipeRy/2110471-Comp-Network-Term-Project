@@ -558,14 +558,14 @@ def start(host=SERVER, port=PORT):
 
 def main():
     global assistant
-    # An optional .env file in the project folder can hold ANTHROPIC_API_KEY.
+    # An optional .env file in the project folder can hold GEMINI_API_KEY or ANTHROPIC_API_KEY.
     chatbot.load_env_file(Path(__file__).resolve().parent.parent / ".env")
     parser = argparse.ArgumentParser(description="TCP private and group chat server")
     parser.add_argument("--host", default=SERVER)
     parser.add_argument("--port", type=int, default=PORT)
-    parser.add_argument("--bot", default=os.environ.get("CHATBOT_PROVIDER", "claude"),
-                        help="chatbot provider: claude (default, needs ANTHROPIC_API_KEY) "
-                             "or echo (offline test replies)")
+    parser.add_argument("--bot", default=os.environ.get("CHATBOT_PROVIDER", chatbot.DEFAULT_PROVIDER),
+                        help="chatbot provider: gemini (default, needs GEMINI_API_KEY), "
+                             "claude (needs ANTHROPIC_API_KEY) or echo (offline test replies)")
     args = parser.parse_args()
     try:
         assistant = chatbot.Chatbot(args.bot)

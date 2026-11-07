@@ -58,7 +58,7 @@ With the environment activated:
 python -m pip install -r requirements.txt
 ```
 
-This installs Flask, the Anthropic SDK (used only by the server's AI chatbot), and their dependencies. Python's `socket` module is included in Python. Tkinter normally comes with the official Windows Python installation; neither needs to be installed with pip.
+This installs Flask, the Anthropic SDK (used only when the server's AI chatbot runs on Claude), and their dependencies. Python's `socket` module is included in Python. Tkinter normally comes with the official Windows Python installation; neither needs to be installed with pip.
 
 ## 5. Verify Flask and Tkinter
 
@@ -88,7 +88,7 @@ The Tkinter command should open a small demonstration window. Close it when fini
 2110471-Comp-Network-Term-Project/
 |-- backend/
 |   |-- server.py
-|   |-- chatbot.py       # AI chatbot (Claude API), called by the server
+|   |-- chatbot.py       # AI chatbot (Gemini or Claude API), called by the server
 |   `-- mentions.py      # @username rule
 |-- frontend/
 |   |-- client.py        # Working terminal chat client
@@ -221,19 +221,27 @@ the remaining two-computer acceptance checklist.
 
 ### Set up the AI chatbot
 
-Only the server computer needs a Claude API key. Before starting the server:
+The chatbot uses Google's Gemini API by default, and only the server computer
+needs a key. Create a free key at <https://aistudio.google.com/apikey>: sign in
+with a Google account, accept the terms, and copy the key. Before starting the
+server:
 
 ```powershell
-$env:ANTHROPIC_API_KEY = "sk-ant-..."
+$env:GEMINI_API_KEY = "your-key"
 python backend/server.py
 ```
 
-On macOS or Linux use `export ANTHROPIC_API_KEY="sk-ant-..."`. Alternatively,
-put `ANTHROPIC_API_KEY=sk-ant-...` in a `.env` file in this folder (Git ignores
-it). Without a key the chat still works and the bot explains how to configure
-it. For an offline demonstration, `python backend/server.py --bot echo` makes
-the bot repeat each question instead of calling the AI. See
-[CHATBOT_AND_MENTIONS.md](CHATBOT_AND_MENTIONS.md) for the model, prompt,
+On macOS or Linux use `export GEMINI_API_KEY="your-key"`. Alternatively, put
+`GEMINI_API_KEY=your-key` in a `.env` file in this folder (Git ignores it). The
+server then prints `[CHATBOT] Gemini gemini-3.5-flash-lite`. On the free tier,
+Google may use what is sent to the bot to improve its products, so do not send
+the bot anything private.
+
+To use Claude instead, set `CHATBOT_PROVIDER=claude` and `ANTHROPIC_API_KEY`.
+Without a key the chat still works and the bot explains how to configure it. For
+an offline demonstration, `python backend/server.py --bot echo` makes the bot
+repeat each question instead of calling the AI. See
+[CHATBOT_AND_MENTIONS.md](CHATBOT_AND_MENTIONS.md) for the models, prompt,
 settings, and privacy notes.
 
 ## Check the project without running Python on your computer
@@ -261,7 +269,7 @@ python -m unittest discover -s tests -v
 
 The suite includes terminal/server tests, real network-adapter tests, hidden
 Tkinter integration tests, and chatbot/mention tests that use an offline bot or
-a local fake of the Claude API (no key or internet needed). The GUI tests require Tkinter and an available desktop
+a local fake of the Gemini or Claude API (no key or internet needed). The GUI tests require Tkinter and an available desktop
 display; they are skipped if a Tk display cannot be initialized. They do not
 replace acceptance testing on two physical computers.
 

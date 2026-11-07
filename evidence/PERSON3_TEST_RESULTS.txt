@@ -1,9 +1,10 @@
-Person 3 (chatbot and @mentions) local CI-entrypoint validation — 2026-11-07, after the macOS visual fixes
+Person 3 (chatbot and @mentions) local CI-entrypoint validation — 2026-11-08, after adding the Gemini provider
 Environment: macOS 27.0.1 (Apple silicon), Python 3.14.9, Tk 9.0, anthropic 2.6.0; loopback TCP.
 Command: python .github/scripts/run_tests.py
-Result: 80 passed, no skips (56 earlier tests + 24 chatbot/mention tests, 4 of them with hidden Tk windows).
-No real API key or internet: the server used the offline echo bot or a local fake Claude Messages API.
-A live Claude answer and physical two-computer acceptance were not part of this run.
+Result: 83 passed, no skips (56 earlier tests + 27 chatbot/mention tests, 4 of them with hidden Tk windows).
+No real API key: the server used the offline echo bot or a local fake of the Gemini or Claude API.
+Separately, one request with a fake key reached the real Gemini API and came back as "key rejected".
+A live AI answer and physical two-computer acceptance were not part of this run.
 Screenshots of the visible app: evidence/PERSON3_VISUAL_QA.md.
 
 test_client_cannot_forge_participants_recipients_or_sender (test_chat.BroadcastChatTests.test_client_cannot_forge_participants_recipients_or_sender) ... ok
@@ -43,6 +44,7 @@ test_configuration_is_validated (test_chatbot.ChatbotUnitTests.test_configuratio
 test_echo_provider_counts_turns_and_names_the_place (test_chatbot.ChatbotUnitTests.test_echo_provider_counts_turns_and_names_the_place) ... ok
 test_env_file_only_fills_missing_variables (test_chatbot.ChatbotUnitTests.test_env_file_only_fills_missing_variables) ... ok
 test_failures_become_explanations_without_logging_the_question (test_chatbot.ChatbotUnitTests.test_failures_become_explanations_without_logging_the_question) ... ok
+test_gemini_needs_a_key_and_a_connection (test_chatbot.ChatbotUnitTests.test_gemini_needs_a_key_and_a_connection) ... ok
 test_api_errors_and_refusals_reach_only_the_asker (test_chatbot.ClaudeProviderTests.test_api_errors_and_refusals_reach_only_the_asker) ... ok
 test_one_question_at_a_time_per_user (test_chatbot.ClaudeProviderTests.test_one_question_at_a_time_per_user) ... ok
 test_requests_use_fallbacks_low_effort_and_text_only_history (test_chatbot.ClaudeProviderTests.test_requests_use_fallbacks_low_effort_and_text_only_history) ... ok
@@ -51,6 +53,8 @@ test_bot_name_is_reserved_and_questions_are_validated (test_chatbot.EchoBotServe
 test_bot_room_is_private_and_remembers_the_conversation (test_chatbot.EchoBotServerTests.test_bot_room_is_private_and_remembers_the_conversation) ... ok
 test_mentioning_the_bot_answers_every_member_and_nobody_else (test_chatbot.EchoBotServerTests.test_mentioning_the_bot_answers_every_member_and_nobody_else) ... ok
 test_terminal_bot_command (test_chatbot.EchoBotServerTests.test_terminal_bot_command) ... ok
+test_errors_blocks_and_busy_retries_reach_only_the_asker (test_chatbot.GeminiProviderTests.test_errors_blocks_and_busy_retries_reach_only_the_asker) ... ok
+test_requests_send_the_prompt_and_text_only_history (test_chatbot.GeminiProviderTests.test_requests_send_the_prompt_and_text_only_history) ... ok
 test_highlighting_and_suggestion_helpers (test_mentions.MentionRuleTests.test_highlighting_and_suggestion_helpers) ... ok
 test_rule_examples (test_mentions.MentionRuleTests.test_rule_examples) ... ok
 test_server_and_ui_copies_of_the_rule_agree (test_mentions.MentionRuleTests.test_server_and_ui_copies_of_the_rule_agree) ... ok
@@ -88,6 +92,6 @@ test_reply_menu_cancel_then_send_and_quote (test_ui_integration.GuiIntegrationTe
 test_switching_private_and_group_tabs_keeps_destinations_separate (test_ui_integration.GuiIntegrationTests.test_switching_private_and_group_tabs_keeps_destinations_separate) ... ok
 
 ----------------------------------------------------------------------
-Ran 80 tests in 28.255s
+Ran 83 tests in 33.550s
 
 OK

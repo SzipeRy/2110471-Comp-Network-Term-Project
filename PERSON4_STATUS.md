@@ -135,7 +135,8 @@ locally verified behavior, rather than 12 unfinished implementation tasks.
 
 - Chatbot transport, mention behavior, and AI/prompt documentation: done by
   Person 3, see [CHATBOT_AND_MENTIONS.md](CHATBOT_AND_MENTIONS.md). A live
-  chatbot demo needs `ANTHROPIC_API_KEY` on the server computer.
+  chatbot demo needs `GEMINI_API_KEY` (free from Google AI Studio) on the
+  server computer.
 - Physical two-computer screenshots and final demo acceptance: requires the
   team's devices and LAN; the checklist is ready.
 - UI screenshot selection/presentation polish: coordinate with Person 2 after

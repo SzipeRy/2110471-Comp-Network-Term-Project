@@ -1,10 +1,11 @@
 """AI chatbot tests (Person 3). Nothing here uses the network or a real API key: the
-server runs the offline echo provider, or Claude against a local fake Messages API."""
+server runs the offline echo provider, or Gemini or Claude against a local fake API."""
 import contextlib
 import io
 import os
 from pathlib import Path
 import queue
+import socket
 import subprocess
 import sys
 import tempfile
@@ -51,8 +52,26 @@ class ChatbotUnitTests(unittest.TestCase):
         with patch.dict(os.environ):
             os.environ.pop("CHATBOT_MODEL", None)
             os.environ.pop("CHATBOT_EFFORT", None)
-            bot = chatbot.Chatbot()
-        self.assertEqual((bot.model, bot.effort), ("claude-opus-5-5", "low"))
+            claude, gemini = chatbot.Chatbot("claude"), chatbot.Chatbot()
+        self.assertEqual((claude.model, claude.effort), ("claude-opus-5-5", "low"))
+        self.assertEqual((gemini.provider, gemini.model), ("gemini", "gemini-3.5-flash-lite"))
+
+    def test_gemini_needs_a_key_and_a_connection(self):
+        conversation = [{"role": "user", "content": "secret question"}]
+        with patch.dict(os.environ), contextlib.redirect_stdout(io.StringIO()) as log:
+            for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "CHATBOT_MODEL"):
+                os.environ.pop(name, None)
+            bot = chatbot.Chatbot("gemini")
+            self.assertIn("GEMINI_API_KEY is not set", bot.describe())
+            self.assertEqual(bot.reply(conversation, "Alice", "x"), (chatbot.NOT_CONFIGURED_GEMINI, False))
+            with socket.socket() as probe:  # a port with nothing listening on it
+                probe.bind(("127.0.0.1", 0))
+                port = probe.getsockname()[1]
+            os.environ.update(GEMINI_API_KEY="test-gemini-key", NO_PROXY="127.0.0.1",
+                              GEMINI_BASE_URL=f"http://127.0.0.1:{port}")
+            self.assertEqual(bot.describe(), "Gemini gemini-3.5-flash-lite")
+            self.assertEqual(bot.reply(conversation, "Alice", "x"), (chatbot.UNREACHABLE, False))
+        self.assertNotIn("secret", log.getvalue())
 
     def test_env_file_only_fills_missing_variables(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"P3_KEEP": "already set"}):
@@ -170,6 +189,63 @@ class EchoBotServerTests(p3.BotServerTestCase):
         terminal.stdin.write(wire.DISCONNECT_MESSAGE + "\n")
         terminal.stdin.flush()
         self.assertEqual(terminal.wait(timeout=5), 0)
+
+
+class GeminiProviderTests(p3.BotServerTestCase):
+    def setUp(self):
+        self.fake = p3.FakeGemini()
+        self.addCleanup(self.fake.close)
+        self.server_env = self.fake.server_env()
+        super().setUp()
+
+    def test_requests_send_the_prompt_and_text_only_history(self):
+        alice = self.connect("Alice")
+        self.fake.respond(p3.gemini_reply("TCP is a reliable byte stream."))
+        wire.send(alice, p3.ask("What is TCP?"))
+        self.receive(alice)
+        answer = self.receive(alice)
+        self.assertEqual((answer["sender_id"], answer["text"]), ("Bot", "TCP is a reliable byte stream."))
+        first = self.fake.requests.get(timeout=5)
+        self.assertEqual(first["path"], "/v1beta/models/gemini-3.5-flash-lite:generateContent")
+        self.assertEqual(first["headers"]["x-goog-api-key"], "test-gemini-key")
+        body = first["body"]
+        self.assertEqual(set(body), {"systemInstruction", "contents"})
+        system = body["systemInstruction"]["parts"][0]["text"]
+        self.assertTrue(system.startswith("You are Bot"))
+        self.assertTrue(system.endswith("You are talking with Alice in their private chatbot room."))
+        self.assertEqual(body["contents"], [{"role": "user", "parts": [{"text": "What is TCP?"}]}])
+        self.fake.respond(p3.gemini_reply("UDP sends datagrams without a connection."))
+        wire.send(alice, p3.ask("And UDP?"))
+        self.receive(alice)
+        self.assertEqual(self.receive(alice)["text"], "UDP sends datagrams without a connection.")
+        # The thought summary is never shown or replayed; "assistant" turns become "model".
+        self.assertEqual(self.fake.requests.get(timeout=5)["body"]["contents"], [
+            {"role": "user", "parts": [{"text": "What is TCP?"}]},
+            {"role": "model", "parts": [{"text": "TCP is a reliable byte stream."}]},
+            {"role": "user", "parts": [{"text": "And UDP?"}]},
+        ])
+
+    def test_errors_blocks_and_busy_retries_reach_only_the_asker(self):
+        alice, bob = self.connect("Alice"), self.connect("Bob")
+        cases = [
+            ([p3.gemini_error(400, "INVALID_ARGUMENT", "API key not valid. Please pass a valid API key.",
+                              "API_KEY_INVALID")], "API key was rejected"),
+            ([p3.gemini_error(429, "RESOURCE_EXHAUSTED", "Quota exceeded.")], "free quota is used up"),
+            ([p3.gemini_error(404, "NOT_FOUND", "models/x is not found.")], "check CHATBOT_MODEL"),
+            ([p3.gemini_reply(None, block_reason="SAFETY")], chatbot.REFUSED),
+            ([p3.gemini_reply(None, finish_reason="SAFETY")], chatbot.REFUSED),
+            ([p3.gemini_error(503, "UNAVAILABLE", "The model is overloaded."),
+              p3.gemini_reply("Back again.")], "Back again."),
+        ]
+        for responses, expected in cases:
+            with self.subTest(expected=expected):
+                for response in responses:
+                    self.fake.respond(response)
+                wire.send(alice, p3.ask("A question"))
+                self.receive(alice)
+                self.assertIn(expected, self.receive(alice)["text"])
+        self.assertEqual(self.fake.requests.qsize(), 7)  # the 503 was retried once
+        self.assert_quiet(bob)
 
 
 @unittest.skipUnless(p3.HAS_SDK, "install requirements.txt to test the Claude provider")

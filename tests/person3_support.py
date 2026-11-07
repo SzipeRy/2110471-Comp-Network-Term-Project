@@ -87,6 +87,36 @@ class FakeAnthropic:
                 "ANTHROPIC_BASE_URL": self.url, "NO_PROXY": "127.0.0.1,localhost"}
 
 
+class FakeGemini(FakeAnthropic):
+    """The same local stand-in, configured as the Gemini API (generateContent)."""
+
+    def server_env(self):
+        return {"CHATBOT_PROVIDER": "gemini", "GEMINI_API_KEY": "test-gemini-key",
+                "GEMINI_BASE_URL": self.url, "NO_PROXY": "127.0.0.1,localhost"}
+
+
+def gemini_reply(text, finish_reason="STOP", block_reason=None):
+    """A generateContent response: a thought summary part, then the answer.
+
+    block_reason gives the response to a question that was blocked before any answer.
+    """
+    usage = {"promptTokenCount": 12, "candidatesTokenCount": 6, "totalTokenCount": 18}
+    if block_reason:
+        return 200, {"promptFeedback": {"blockReason": block_reason}, "usageMetadata": usage}
+    parts = [{"text": "Thinking about the question.", "thought": True}]
+    if text is not None:
+        parts.append({"text": text, "thoughtSignature": "c2lnbmF0dXJl"})
+    return 200, {"candidates": [{"content": {"role": "model", "parts": parts},
+                                 "finishReason": finish_reason, "index": 0}],
+                 "usageMetadata": usage, "modelVersion": "gemini-3.5-flash-lite"}
+
+
+def gemini_error(code, status, message, reason=None):
+    """A Google API error body, as the Gemini API sends it."""
+    details = [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": reason}] if reason else []
+    return code, {"error": {"code": code, "message": message, "status": status, "details": details}}
+
+
 class BotServerTestCase(support.ServerTestCase):
     """Starts the real server with server_env; the default is the offline echo bot."""
 
