@@ -7,6 +7,8 @@ Message dict (shared contract):
   {type, room_type: "private"|"group"|"bot", room_id, message_id, sender,
    text, reply_to, mentions, timestamp}
 The server echoes a user's own messages back, so the UI only draws what on_message delivers.
+on_message also delivers type="system_message" for group join announcements,
+using the same room_id/message_id/text fields. These rows cannot be replied to.
 """
 from dataclasses import dataclass
 import json

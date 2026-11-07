@@ -168,7 +168,7 @@ Group names and counts are discoverable so users can join existing groups. Membe
 {"type": "group_members", "room": "Study"}
 ```
 
-The `group_members` response includes `room` and a sorted `members` array. The requester must be a member. Only the requester receives it. Repeating a list command refreshes the snapshot; membership updates are not pushed automatically.
+The `group_members` response includes `room` and a sorted `members` array. The requester must be a member. Only the requester receives it. Repeating a list command refreshes the snapshot; complete membership lists are not pushed automatically. Subscribed clients separately receive the group join announcements below.
 
 ## Server-wide member list
 
@@ -267,7 +267,8 @@ The UI receives `GroupInfo(joined, member_count, members)` values. `members` is
 `None` when names are unavailable, including groups the user has not joined.
 The adapter polls `member_list` and `group_list` every two seconds, then requests
 `group_members` only for joined groups. Successful create/join/leave responses
-also update the local membership display. There is no new server push protocol.
+also update the local membership display. Opted-in clients additionally receive
+server-pushed `group_event` join announcements; full lists still use polling.
 
 All post-registration writes use a single background writer, and a separate
 receiver performs exact-length reads and invokes callbacks. Tk widgets are
