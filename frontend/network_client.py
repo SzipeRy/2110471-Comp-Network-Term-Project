@@ -236,8 +236,11 @@ class NetworkClient(ClientInterface):
         elif kind == "group_list":
             groups = {}
             for item in message["groups"]:
-                old = session.groups.get(item["name"])
-                members = old.members if old and old.joined and item["joined"] else None
+                if "members" in item:  # R9: names of every group, joined or not
+                    members = tuple(item["members"])
+                else:  # an older server without names in group_list
+                    old = session.groups.get(item["name"])
+                    members = old.members if old and old.joined and item["joined"] else None
                 groups[item["name"]] = GroupInfo(item["joined"], item["member_count"], members)
                 if item["joined"]:
                     self._enqueue({"type": "_members", "room": item["name"]})
@@ -264,7 +267,9 @@ class NetworkClient(ClientInterface):
             name = message["room"]
             old = session.groups.get(name)
             if old:
-                session.groups[name] = GroupInfo(False, max(0, old.member_count - 1))
+                members = None if old.members is None else tuple(
+                    member for member in old.members if member != session.username)
+                session.groups[name] = GroupInfo(False, max(0, old.member_count - 1), members)
                 self._publish_groups(session)
             with session.lock:
                 session.leaving.discard(name.casefold())

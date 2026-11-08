@@ -184,8 +184,8 @@ Python through the server's private-network firewall when prompted.
 
 Click an online user to open a private tab. Use **+ New / join group** to create
 or join groups, then click a group in the sidebar. The public `lobby` includes
-every registered user. Group member names are shown only after joining; outsiders
-see the group name and member count. Online users, group discovery, and joined
+every registered user. Every group is listed with its member names, including
+groups you have not joined (R9); only members see a group's messages. Online users, group discovery, and joined
 group membership refresh approximately every two seconds.
 
 When someone joins a group, its members see a system message such as **Bob joined

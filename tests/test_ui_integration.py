@@ -119,11 +119,12 @@ class GuiIntegrationTests(support.ServerTestCase):
         self.login("Alice")
         self.pump(lambda: "Study" in self.app.groups)
         info = self.app.groups["Study"]
-        self.assertIsNone(info.members)
+        self.assertEqual(info.members, ("Bob",))  # R9: outsiders see the member list
         self.app.main.open_group("Study")
         room = self.app.main.rooms[("group", "Study")]
         self.assertEqual(room.entry.cget("state"), "disabled")
-        self.assertNotIn("Bob", room.header.cget("text"))
+        self.assertIn("Bob", room.header.cget("text"))
+        self.assertEqual(room.messages, {})  # R11: but not the messages sent before joining
         room.join_btn.invoke()
         self.pump(lambda: room.joined)
         bob.send_message("group", "Study", "Reply to earlier message", original["message_id"])
