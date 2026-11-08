@@ -173,11 +173,13 @@ class GuiIntegrationTests(support.ServerTestCase):
         private.entry.insert(0, "Private first")
         private.send_btn.invoke()
         first = b.wait("message")
+        self.pump(lambda: self.app.pending_send is None)  # the chat box waits for the echo
         self.app.main.open_group("Alice-Carol")
         group = self.app.main.rooms[("group", "Alice-Carol")]
         group.entry.insert(0, "Group only")
         group.send_btn.invoke()
         grouped = c.wait("message")
+        self.pump(lambda: self.app.pending_send is None)
         self.app.main._room("private", private_id, select=True)
         private.entry.insert(0, "Private again")
         private.send_btn.invoke()
@@ -210,6 +212,7 @@ class GuiIntegrationTests(support.ServerTestCase):
         room.entry.insert(0, "Cancelled reply becomes ordinary text")
         room.send_btn.invoke()
         self.assertIsNone(b.wait("message")["reply_to"])
+        self.pump(lambda: self.app.pending_send is None)  # the chat box waits for the echo
         menu.invoke(0)
         room.entry.insert(0, "Actual reply")
         room.send_btn.invoke()
