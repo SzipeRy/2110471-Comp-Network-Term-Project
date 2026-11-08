@@ -104,7 +104,7 @@ class EchoBotServerTests(p3.BotServerTestCase):
         self.assertTrue(self.receive(bob)["text"].startswith("Echo #1 for Bob"))
         self.assert_quiet(alice)
         # Replies stay inside one conversation.
-        wire.send(alice, wire.create_message("In the lobby"))
+        wire.send(alice, wire.create_message("In the lobby", room="lobby"))
         lobby = self.receive(alice)
         self.receive(bob)
         self.assertEqual(self.request(alice, p3.ask("Quote", lobby["msg_id"]), "error")["code"], "invalid_reply")
@@ -147,8 +147,8 @@ class EchoBotServerTests(p3.BotServerTestCase):
             self.assertEqual(self.request(pending, p3.ask(text), "error")["code"], "invalid_message")
 
     def test_adapter_bot_room_and_answers_in_the_lobby(self):
-        alice, a, _ = self.adapter("Alice")
-        bob, b, _ = self.adapter("Bob")
+        alice, a, _ = self.adapter("Alice", lobby=True)
+        bob, b, _ = self.adapter("Bob", lobby=True)
         self.assertTrue(alice.supports_bot)
         self.assertTrue(alice.send_message("bot", "chatbot", "Hello bot"))
         own = a.wait("message")
@@ -321,7 +321,7 @@ class ClaudeProviderTests(p3.BotServerTestCase):
         self.receive(alice)
         self.fake.requests.get(timeout=p3.BOT_TIMEOUT)  # the AI request is now in progress
         self.assertEqual(self.request(alice, p3.ask("Too soon"), "error")["code"], "bot_busy")
-        wire.send(alice, wire.create_message("@Bot also too soon"))  # still delivered to the lobby
+        wire.send(alice, wire.create_message("@Bot also too soon", room="lobby"))  # still delivered to the lobby
         self.assertEqual(self.receive(alice)["text"], "@Bot also too soon")
         self.receive(bob)
         self.assertEqual(self.receive(alice, "error")["code"], "bot_busy")

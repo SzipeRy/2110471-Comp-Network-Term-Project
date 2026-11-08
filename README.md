@@ -138,7 +138,6 @@ After registration, choose a private conversation or group before sending text. 
 | `/groups` or `!GROUPLIST` | Show available groups and mark groups you have joined. |
 | `/members Study` | Show members of a group you belong to. |
 | `/leave Study` | Leave a group and stop receiving its messages. |
-| `/lobby` | Enter the public lobby, visible to every registered user. |
 | `/reply <msg_id> <text>` | Reply to a recent message in the selected conversation. |
 | `/bot <question>` | Ask the AI chatbot privately. Write `@Bot` in a chat to ask it there. |
 | `!DISCONNECT` | Disconnect. |
@@ -183,8 +182,8 @@ computer needs its own Python environment and the same project version. Allow
 Python through the server's private-network firewall when prompted.
 
 Click an online user to open a private tab. Use **+ New / join group** to create
-or join groups, then click a group in the sidebar. The public `lobby` includes
-every registered user. Every group is listed with its member names, including
+or join groups, then click a group in the sidebar. You are in no group until you
+create or join one yourself (R10). Every group is listed with its member names, including
 groups you have not joined (R9); only members see a group's messages. Online users, group discovery, and joined
 group membership refresh approximately every two seconds.
 

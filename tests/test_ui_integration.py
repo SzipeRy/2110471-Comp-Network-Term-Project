@@ -153,6 +153,8 @@ class GuiIntegrationTests(support.ServerTestCase):
         self.assertTrue(self.showwarning.called)
         self.start_server()
         self.login("Bob")
+        self.client.create_group("lobby")  # R10: no automatic group after a restart either
+        self.pump(lambda: "lobby" in self.app.groups)
         self.app.main.open_group("lobby")
         room = self.app.main.rooms[("group", "lobby")]
         self.pump(lambda: room.joined)

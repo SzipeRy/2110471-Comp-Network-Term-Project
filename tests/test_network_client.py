@@ -45,6 +45,7 @@ class ServerTestCase(unittest.TestCase):
         self.start_server()
 
     def start_server(self):
+        self.lobby_created = False
         self.server = subprocess.Popen(
             [sys.executable, "-u", "backend/server.py", "--host", "127.0.0.1", "--port", "0"],
             cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -71,12 +72,23 @@ class ServerTestCase(unittest.TestCase):
         process.wait(timeout=5)
         process.stdout.close()
 
-    def adapter(self, username):
+    def adapter(self, username, lobby=False):
         client = NetworkClient(refresh_interval=0.1)
         events = Events(client)
         self.addCleanup(client.close)
         confirmed = client.connect(*self.address, username)
+        if lobby:
+            self.join_lobby(client, events)
         return client, events, confirmed
+
+    def join_lobby(self, client, events):
+        """R10: there is no automatic group; a test user creates or joins "lobby" by choice."""
+        if self.lobby_created:
+            client.join_group("lobby")
+        else:
+            client.create_group("lobby")
+            self.lobby_created = True
+        events.wait("groups", lambda g: "lobby" in g and g["lobby"].joined)
 
 
 class NetworkClientTests(ServerTestCase):
@@ -197,8 +209,8 @@ class NetworkClientTests(ServerTestCase):
         self.assertEqual(client.connect(*self.address, "  Bob Smith  "), "Bob Smith")
 
     def test_invalid_reply_and_large_message_report_errors_without_breaking_connection(self):
-        alice, a, _ = self.adapter("Alice")
-        bob, b, _ = self.adapter("Bob")
+        alice, a, _ = self.adapter("Alice", lobby=True)
+        bob, b, _ = self.adapter("Bob", lobby=True)
         alice.send_message("group", "lobby", "Bad reply", "unknown")
         a.wait("error", lambda e: "invalid_reply" in e)
         alice.send_message("group", "lobby", "x" * wire.MAX_MESSAGE_BYTES)
@@ -208,8 +220,8 @@ class NetworkClientTests(ServerTestCase):
         self.assertTrue(alice.connected)
 
     def test_concurrent_sends_keep_frames_intact(self):
-        alice, a, _ = self.adapter("Alice")
-        _, b, _ = self.adapter("Bob")
+        alice, a, _ = self.adapter("Alice", lobby=True)
+        _, b, _ = self.adapter("Bob", lobby=True)
         def send_many(index):
             for i in range(10):
                 alice.send_message("group", "lobby", f"{index}:{i}")
@@ -239,6 +251,7 @@ class NetworkClientTests(ServerTestCase):
         # Start a fresh server, then reuse the same adapter and handlers.
         self.start_server()
         self.assertEqual(alice.connect(*self.address, "Alice"), "Alice")
+        self.join_lobby(alice, a)
         alice.send_message("group", "lobby", "New session")
         a.wait("message", lambda m: m["text"] == "New session")
 
