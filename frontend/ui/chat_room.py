@@ -1,3 +1,4 @@
+from datetime import datetime
 import math
 import tkinter as tk
 from tkinter import font as tkfont
@@ -10,6 +11,14 @@ from .net_interface import BOT_NAME, private_peer
 # Keys that move through or close the @mention suggestions instead of searching again.
 SUGGESTION_KEYS = {"Up", "Down", "Return", "KP_Enter", "Tab", "Escape"}
 MODIFIER_PREFIXES = ("Shift", "Control", "Alt", "Meta", "Super", "Caps", "Command", "Option")
+
+
+def local_clock(timestamp):
+    """"HH:MM" in this computer's time zone. The server sends UTC; a time without a zone counts as local."""
+    try:
+        return datetime.fromisoformat(timestamp).astimezone().strftime("%H:%M")
+    except (TypeError, ValueError):
+        return ""
 
 
 class ChatRoom(tk.Frame):
@@ -188,7 +197,7 @@ class ChatRoom(tk.Frame):
         bubble.pack(side="right" if mine else "left")
 
         who = "You" if mine else (f"🤖 {BOT_NAME}" if from_bot else msg["sender"])
-        tk.Label(bubble, text=f"{who}  {msg.get('timestamp', '')[11:16]}", font=T.F_SMALL,
+        tk.Label(bubble, text=f"{who}  {local_clock(msg.get('timestamp'))}", font=T.F_SMALL,
                  fg=T.MUTE, bg=color, anchor="w").pack(fill="x")
 
         quoted = self.messages.get(msg.get("reply_to"))
