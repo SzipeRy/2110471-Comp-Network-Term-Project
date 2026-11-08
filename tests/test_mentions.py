@@ -68,7 +68,7 @@ class MentionRuleTests(unittest.TestCase):
 class MentionServerTests(p3.BotServerTestCase):
     def test_server_derives_canonical_mentions_and_ignores_client_claims(self):
         alice, *others = [self.connect(name) for name in ("Alice", "Bob", "Bob Smith", "บ๊อบ 😀")]
-        request = wire.create_message("Hi @bob smith, @บ๊อบ 😀 and @BOB! Not mail@Bob or @Bobby")
+        request = wire.create_message("Hi @bob smith, @บ๊อบ 😀 and @BOB! Not mail@Bob or @Bobby", room="lobby")
         request["mentions"] = ["Alice", "Everyone"]
         wire.send(alice, request)
         received = [self.receive(conn) for conn in [alice, *others]]
@@ -91,8 +91,8 @@ class MentionServerTests(p3.BotServerTestCase):
         self.assert_quiet(carol)
 
     def test_adapter_passes_server_mentions_through(self):
-        alice, a, _ = self.adapter("Alice")
-        _, b, _ = self.adapter("Bob Smith")
+        alice, a, _ = self.adapter("Alice", lobby=True)
+        _, b, _ = self.adapter("Bob Smith", lobby=True)
         alice.send_message("group", "lobby", "Hi @bob smith")
         message = b.wait("message", lambda m: m["sender"] == "Alice")
         self.assertEqual(message["mentions"], ["Bob Smith"])
@@ -109,7 +109,10 @@ class MentionServerTests(p3.BotServerTestCase):
         output = queue.Queue()
         threading.Thread(target=test_chat.collect_lines, args=(terminal.stdout, output), daemon=True).start()
         test_chat.wait_for_line(output, "[REGISTERED] as Alice")
-        wire.send(bob, wire.create_message("@alice stand-up in 5"))
+        terminal.stdin.write("/join lobby\n")  # R10: Alice joins the group herself
+        terminal.stdin.flush()
+        test_chat.wait_for_line(output, "[CHAT] Group: lobby")
+        wire.send(bob, wire.create_message("@alice stand-up in 5", room="lobby"))
         test_chat.wait_for_line(output, "[Bob] @alice stand-up in 5")
         test_chat.wait_for_line(output, "[MENTION] Bob mentioned you in group: lobby")
         self.assertEqual(self.receive(bob)["mentions"], ["Alice"])
@@ -121,9 +124,9 @@ class MentionServerTests(p3.BotServerTestCase):
             return seen
 
         # The echo bot repeats "@alice", but only Bob's own mentions print a notice.
-        wire.send(bob, wire.create_message("@Bot say hi to @alice"))
+        wire.send(bob, wire.create_message("@Bot say hi to @alice", room="lobby"))
         seen = lines_until("[Bot] Echo #1")
-        wire.send(bob, wire.create_message("@alice thanks"))
+        wire.send(bob, wire.create_message("@alice thanks", room="lobby"))
         seen += lines_until("[Bob] @alice thanks")
         seen += lines_until("[MENTION]")
         self.assertEqual([line.strip("\a\n") for line in seen if "[MENTION]" in line],

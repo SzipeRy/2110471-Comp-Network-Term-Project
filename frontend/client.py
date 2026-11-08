@@ -10,7 +10,6 @@ FORMAT = "utf-8"
 DISCONNECT_MESSAGE = "!DISCONNECT"
 MEMBERLIST_MESSAGE = "!MEMBERLIST"
 GROUPLIST_MESSAGE = "!GROUPLIST"
-DEFAULT_ROOM = "lobby"
 BOT_ROOM = "chatbot"
 BOT_NAME = "Bot"
 MAX_MESSAGE_BYTES = 1024 * 1024
@@ -36,7 +35,7 @@ def receive_message(conn):
     return message
 
 
-def create_message(text, room=DEFAULT_ROOM, reply_to=None, room_type="group"):
+def create_message(text, room=None, reply_to=None, room_type="group"):
     """Server-owned fields are filled in when this message is broadcast."""
     return {
         "type": "chat_message",
@@ -59,8 +58,8 @@ def send(conn, message):
             message = {"type": "member_list"}
         elif message == GROUPLIST_MESSAGE:
             message = {"type": "group_list"}
-        else:
-            message = create_message(message)
+        else:  # plain text goes to the chat chosen with /private, /create, /join or /group
+            message = create_message(message, room=None, room_type=None)
     if not isinstance(message, dict):
         raise ValueError("Message must be a JSON object or text")
     payload = json.dumps(message, ensure_ascii=False, allow_nan=False).encode(FORMAT)
@@ -111,7 +110,6 @@ HELP = """Choose a destination before sending:
  /groups             List available groups and your memberships (!GROUPLIST)
  /members <group>     List members of a group you belong to
  /leave <group>       Leave a group
- /lobby              Enter the public lobby (visible to all registered users)
  /reply <id> <text>   Reply within the currently selected conversation
  /bot <question>      Ask the AI chatbot privately (or write @Bot in any chat)
  !MEMBERLIST         List connected usernames
@@ -132,8 +130,6 @@ def handle_input(conn, line):
         print(HELP, flush=True)
     elif command == "/groups":
         send(conn, {"type": "group_list"})
-    elif command == "/lobby":
-        send(conn, {"type": "select_chat", "room_type": "group", "room": DEFAULT_ROOM})
     elif command in ("/private", "/group", "/create", "/join", "/leave", "/members"):
         if not argument:
             raise ValueError(f"Use {command} <name>")

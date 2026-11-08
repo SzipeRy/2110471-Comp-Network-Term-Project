@@ -9,6 +9,7 @@ import socket
 import threading
 from unittest.mock import patch
 
+import test_chat
 import test_network_client as support
 from frontend import client as wire
 
@@ -128,11 +129,13 @@ class BotServerTestCase(support.ServerTestCase):
         self.addCleanup(environment.stop)
         super().setUp()
 
-    def connect(self, username=None):
+    def connect(self, username=None, lobby=True):
         conn = socket.create_connection(self.address, timeout=BOT_TIMEOUT)
         self.addCleanup(conn.close)
         if username is not None:
             wire.register(conn, username)
+            if lobby:  # R10: users join a shared group by choice
+                test_chat.join_shared_group(conn)
         return conn
 
     def receive(self, conn, expected_type="chat_message"):

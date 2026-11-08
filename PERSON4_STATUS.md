@@ -33,7 +33,7 @@ afterwards by Person 3; see the end of this file.
 - Server-confirmed join notices in each group's chat log, including the joining
   user's own view. Repeated joins do not duplicate the notice; outsiders do not
   receive it. Notices are separate from replyable messages.
-- Sending disabled after leaving; the public lobby has no Leave button.
+- Sending disabled after leaving; every group can be left.
 - Unexpected disconnect returns to login. Intentional close is silent and
   stops workers. Real mode marks the chatbot unavailable; mock mode still works.
 - README launch instructions and automated adapter/Tkinter tests.

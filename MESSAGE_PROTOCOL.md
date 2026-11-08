@@ -25,7 +25,7 @@ The server confirms registration only to that client:
 ```json
 {
   "type": "registered",
-  "room": "lobby",
+  "room": null,
   "msg_id": "82d19a8fe94745cb9317c05d9db7f01a",
   "sender_id": "server",
   "text": "Registered as Alice",
@@ -35,7 +35,7 @@ The server confirms registration only to that client:
 }
 ```
 
-Registration makes the client a member of the public `lobby`, but the terminal has **no selected outgoing conversation** initially. Choose a destination before typing chat text. Registration is allowed once per connection. Disconnecting releases the username and all that connection's group memberships. These are session names, not authenticated accounts; a later connection using the same name does not inherit private sessions or group memberships.
+Registration does not add the client to any group (R10: clients join groups only by themselves), and the terminal has **no selected outgoing conversation** initially. Choose a destination before typing chat text. Registration is allowed once per connection. Disconnecting releases the username and all that connection's group memberships. These are session names, not authenticated accounts; a later connection using the same name does not inherit private sessions or group memberships.
 
 ## Terminal commands
 
@@ -48,7 +48,6 @@ Registration makes the client a member of the public `lobby`, but the terminal h
 | `/groups` or `!GROUPLIST` | List available groups, their member counts, and whether you belong to each. |
 | `/members <group>` | List usernames in a group you belong to. |
 | `/leave <group>` | Leave a group. If selected, clear the outgoing destination. |
-| `/lobby` | Select the public lobby. Messages here are visible to all registered clients. |
 | `/reply <msg_id> <text>` | Send a reply in the selected conversation. |
 | `/bot <question>` | Ask the AI chatbot in your private chatbot room. The selected conversation is unchanged. |
 | `!MEMBERLIST` | List all connected, registered usernames, including yourself. |
@@ -92,7 +91,7 @@ This is how ordinary terminal text is sent:
 }
 ```
 
-If no destination is selected, the server returns `chat_not_selected`. An omitted `room` and `room_type` also means the selected destination. For compatibility, an explicit group `room` without `room_type` is treated as a group request. The Python helper `create_message(text)` still explicitly targets the public lobby by default; the terminal uses `create_message(text, room=None, room_type=None)` to follow its selected chat.
+If no destination is selected, the server returns `chat_not_selected`. An omitted `room` and `room_type` also means the selected destination. For compatibility, an explicit group `room` without `room_type` is treated as a group request. The Python helper `create_message(text)` has no default group; pass `room` for a group, or use `create_message(text, room=None, room_type=None)` (as the terminal does) to follow the selected chat.
 
 ### Explicit group request
 
@@ -152,7 +151,7 @@ Successful creation, joining, or selection returns a `chat_selected` envelope on
 {"type": "leave_group", "room": "Study"}
 ```
 
-Leaving requires membership and returns `group_left` only to the requester. The public lobby cannot be left; select another destination to avoid sending there. Other empty groups are deleted. Disconnect removes membership from all groups and deletes any groups made empty. Groups and memberships are in memory and reset when the server restarts.
+Leaving requires membership and returns `group_left` only to the requester. Any group can be left, and a group with no members left is deleted. Disconnect removes membership from all groups and deletes any groups made empty. Groups and memberships are in memory and reset when the server restarts.
 
 ```json
 {"type": "group_list"}
@@ -161,7 +160,7 @@ Leaving requires membership and returns `group_left` only to the requester. The 
 The `group_list` response contains a `groups` array, for example:
 
 ```json
-[{"name": "Study", "joined": false, "member_count": 2, "members": ["Alice", "Bob"]}, {"name": "lobby", "joined": true, "member_count": 3, "members": ["Alice", "Bob", "Carol"]}]
+[{"name": "Study", "joined": false, "member_count": 2, "members": ["Alice", "Bob"]}, {"name": "Team", "joined": true, "member_count": 3, "members": ["Alice", "Bob", "Carol"]}]
 ```
 
 Every client sees every group with its member list (R9), so users can choose which groups to join. Message contents are never exposed by this list; only members receive group messages (R11).
@@ -212,8 +211,8 @@ refreshes do not emit events. Leaving and joining again emits a new event.
 Outsiders and members who have left do not receive the event. Events are not
 stored in the reply-reference index and cannot be quoted as chat messages.
 The desktop maps them to non-replyable `system_message` rows in the group log.
-There is no announcement history download and no new event for automatic lobby
-membership during registration.
+There is no announcement history download. Registration joins no group, so it
+produces no join event.
 
 ## Replies
 
@@ -289,7 +288,7 @@ Errors are sent only to the requester using the standard envelope with `type: "e
 | `invalid_username` | Invalid or reserved name. |
 | `username_taken` | Another connected user owns the name. |
 | `already_registered` | Reconnect to choose a different username. |
-| `invalid_group` | Invalid group name or attempt to leave the public lobby. |
+| `invalid_group` | Invalid group name. |
 | `group_exists` | The requested new group already exists. |
 | `group_not_found` | The named group does not exist. |
 | `not_group_member` | Group sending, selection, member listing, or leaving requires membership. |

@@ -35,6 +35,17 @@ def wait_for_line(lines, text, timeout=5):
     raise AssertionError(f"Did not receive output containing {text!r}")
 
 
+def join_shared_group(conn, name="lobby"):
+    """R10: there is no automatic group, so a test user creates or joins one by choice."""
+    client.send(conn, {"type": "join_group", "room": name})
+    response = client.receive_message(conn)
+    if response.get("code") == "group_not_found":
+        client.send(conn, {"type": "create_group", "room": name})
+        response = client.receive_message(conn)
+    assert response["type"] == "chat_selected", response
+    return response
+
+
 class RegistrationCompatibilityTests(unittest.TestCase):
     def test_older_server_reports_restart_instead_of_retrying_username(self):
         # This is the actual response returned by the pre-registration server.
@@ -75,12 +86,14 @@ class BroadcastChatTests(unittest.TestCase):
         if process.stdout:
             process.stdout.close()
 
-    def connect(self, username=None, registered=True):
+    def connect(self, username=None, registered=True, lobby=True):
         conn = socket.create_connection(self.address, timeout=5)
         self.addCleanup(conn.close)
         wait_for_line(self.logs, "[ACTIVE CONNECTIONS]")
         if registered:
             self.names[conn] = client.register(conn, username or f"User{len(self.names) + 1}")
+            if lobby:
+                join_shared_group(conn)
         return conn
 
     def assert_broadcast(self, sender, recipients, text):
@@ -110,6 +123,23 @@ class BroadcastChatTests(unittest.TestCase):
 
     def assert_quiet(self, *connections):
         self.assertEqual(select.select(list(connections), [], [], 0.1)[0], [])
+
+    def test_groups_start_with_their_creator_and_are_joined_only_by_choice(self):
+        # R8, R9, R10: no automatic group; a creator starts alone; others join by themselves.
+        alice = self.connect("Alice", lobby=False)
+        bob = self.connect("Bob", lobby=False)
+        self.assertEqual(self.request(alice, {"type": "group_list"}, "group_list")["groups"], [])
+        created = self.request(alice, {"type": "create_group", "room": "Study"}, "chat_selected")
+        self.assertEqual(created["members"], ["Alice"])
+        study = self.request(bob, {"type": "group_list"}, "group_list")["groups"]
+        self.assertEqual(study, [{"name": "Study", "joined": False, "member_count": 1, "members": ["Alice"]}])
+        denied = self.request(bob, client.create_message("Let me in", room="Study"), "error")
+        self.assertEqual(denied["code"], "not_group_member")
+        joined = self.request(bob, {"type": "join_group", "room": "Study"}, "chat_selected")
+        self.assertEqual(joined["members"], ["Alice", "Bob"])
+        self.request(alice, {"type": "leave_group", "room": "Study"}, "group_left")
+        self.request(bob, {"type": "leave_group", "room": "Study"}, "group_left")
+        self.assertEqual(self.request(bob, {"type": "group_list"}, "group_list")["groups"], [])
 
     def test_private_chat_only_reaches_its_two_participants(self):
         alice, bob, carol = self.connect("Alice"), self.connect("Bob"), self.connect("Carol")
@@ -337,7 +367,7 @@ class BroadcastChatTests(unittest.TestCase):
     def test_fragmented_utf8_and_back_to_back_messages(self):
         alice, bob = self.connect(), self.connect()
         text = "\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35 \U0001f600" * 200
-        payload = json.dumps(client.create_message(text), ensure_ascii=False).encode("utf-8")
+        payload = json.dumps(client.create_message(text, room="lobby"), ensure_ascii=False).encode("utf-8")
         frame = str(len(payload)).encode().ljust(client.HEADER, b" ") + payload
         # Split the length header and UTF-8 characters across separate writes.
         for offset in range(0, len(frame), 7):
@@ -407,7 +437,7 @@ class BroadcastChatTests(unittest.TestCase):
     def test_server_assigns_metadata_and_preserves_reply_reference(self):
         alice, bob = self.connect(), self.connect()
         original = self.assert_broadcast(alice, [alice, bob], "Original")
-        reply = client.create_message("Reply", reply_to=original["msg_id"])
+        reply = client.create_message("Reply", room="lobby", reply_to=original["msg_id"])
         reply.update(msg_id="forged-id", sender_id=self.names[alice], timestamp="fake-time")
         client.send(bob, reply)
         received = [client.receive_message(conn) for conn in [alice, bob]]
@@ -442,7 +472,7 @@ class BroadcastChatTests(unittest.TestCase):
 
     def test_json_size_limit_includes_server_metadata(self):
         alice = self.connect()
-        overhead = len(json.dumps(client.create_message("")).encode("utf-8"))
+        overhead = len(json.dumps(client.create_message("", room="lobby")).encode("utf-8"))
         client.send(alice, "x" * (client.MAX_MESSAGE_BYTES - overhead))
         error = client.receive_message(alice)
         self.assertEqual(error["type"], "error")
@@ -453,7 +483,7 @@ class BroadcastChatTests(unittest.TestCase):
 
     def test_disconnect_text_inside_chat_is_not_a_control_message(self):
         alice, bob = self.connect(), self.connect()
-        client.send(alice, client.create_message("!DISCONNECT"))
+        client.send(alice, client.create_message("!DISCONNECT", room="lobby"))
         for conn in [alice, bob]:
             self.assertEqual(client.receive_message(conn)["text"], "!DISCONNECT")
         self.assert_broadcast(alice, [alice, bob], "Still here")
@@ -469,6 +499,7 @@ class BroadcastChatTests(unittest.TestCase):
         self.assert_broadcast(alice, [alice], "Only registered clients")
         self.assertEqual(select.select([pending], [], [], 0.1)[0], [])
         self.names[pending] = client.register(pending, "Bob")
+        join_shared_group(pending)
         self.assert_broadcast(pending, [alice, pending], "Now joined")
 
     def test_member_list_includes_self_and_unicode_but_excludes_unregistered_clients(self):
@@ -503,7 +534,7 @@ class BroadcastChatTests(unittest.TestCase):
 
     def test_member_list_command_text_can_still_be_sent_as_explicit_chat(self):
         alice, bob = self.connect("Alice"), self.connect("Bob")
-        client.send(alice, client.create_message("!MEMBERLIST"))
+        client.send(alice, client.create_message("!MEMBERLIST", room="lobby"))
         for conn in [alice, bob]:
             self.assertEqual(client.receive_message(conn)["text"], "!MEMBERLIST")
 
@@ -521,6 +552,7 @@ class BroadcastChatTests(unittest.TestCase):
             self.assertEqual(error["type"], "error")
             self.assertEqual(error["code"], "invalid_username")
         self.names[pending] = client.register(pending, "  Alice  ")
+        join_shared_group(pending)
         self.assertEqual(self.names[pending], "Alice")
         self.assert_broadcast(pending, [pending], "Corrected")
 
@@ -530,6 +562,7 @@ class BroadcastChatTests(unittest.TestCase):
         client.send(pending, {"type": "register", "username": "alice"})
         self.assertEqual(client.receive_message(pending)["code"], "username_taken")
         self.names[pending] = client.register(pending, "Bob")
+        join_shared_group(pending)
         client.send(alice, {"type": "register", "username": "Carol"})
         self.assertEqual(client.receive_message(alice)["code"], "already_registered")
         self.assert_broadcast(alice, [alice, pending], "Still Alice")
@@ -582,7 +615,7 @@ class BroadcastChatTests(unittest.TestCase):
         ).start()
         wait_for_line(output, "[REGISTERED] as TerminalUser")
         wait_for_line(self.logs, "[ACTIVE CONNECTIONS]")
-        terminal.stdin.write("/lobby\n")
+        terminal.stdin.write("/join lobby\n")
         terminal.stdin.flush()
         wait_for_line(output, "[CHAT] Group: lobby")
         terminal.stdin.write(client.MEMBERLIST_MESSAGE + "\n")
@@ -632,7 +665,7 @@ class BroadcastChatTests(unittest.TestCase):
         terminal.stdin.write("  Bob  \n")
         terminal.stdin.flush()
         wait_for_line(output, "[REGISTERED] as Bob")
-        terminal.stdin.write("/lobby\n")
+        terminal.stdin.write("/join lobby\n")
         terminal.stdin.flush()
         wait_for_line(output, "[CHAT] Group: lobby")
         terminal.stdin.write("Hello from Bob\n")

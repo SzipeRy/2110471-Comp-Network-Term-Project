@@ -20,7 +20,6 @@ HEADER = 64
 PORT = 5050
 SERVER = "0.0.0.0"
 FORMAT = "utf-8"
-DEFAULT_ROOM = "lobby"
 MAX_MESSAGE_BYTES = 1024 * 1024
 MAX_USERNAME_LENGTH = 20
 MAX_GROUP_LENGTH = 40
@@ -29,7 +28,9 @@ MAX_REPLY_REFERENCES = 10000
 # Membership and private sessions belong to socket connections, not reusable names.
 clients = {}
 usernames = {}
-groups = {DEFAULT_ROOM: {"name": DEFAULT_ROOM, "id": uuid.uuid4().hex, "members": set()}}
+# R8/R10: every group is created by a client, and users join groups only by choice:
+# there is no default group and nobody is added to a group automatically.
+groups = {}
 active_chats = {}
 private_rooms = {}
 reply_references = OrderedDict()
@@ -80,7 +81,7 @@ def encode_message(message):
     return str(len(payload)).encode(FORMAT).ljust(HEADER, b" ") + payload
 
 
-def server_message(kind, sender_id, text, room=DEFAULT_ROOM, reply_to=None):
+def server_message(kind, sender_id, text, room=None, reply_to=None):
     return {
         "type": kind, "room": room, "msg_id": uuid.uuid4().hex,
         "sender_id": sender_id, "text": text, "reply_to": reply_to,
@@ -130,7 +131,6 @@ def register_client(conn, requested_name, group_events=False):
             if any(existing.casefold() == name.casefold() for existing in usernames.values()):
                 raise RequestError("username_taken", "That username is already in use; choose another")
             usernames[conn] = name
-            groups[DEFAULT_ROOM]["members"].add(conn)
             if group_events:
                 group_event_clients.add(conn)
         response = server_message("registered", "server", f"Registered as {name}")
@@ -149,7 +149,7 @@ def remove_client(conn):
         bot_pending.discard(conn)
         for key, group in list(groups.items()):
             group["members"].discard(conn)
-            if key != DEFAULT_ROOM and not group["members"]:
+            if not group["members"]:
                 del groups[key]
         for pair in list(private_rooms):
             if conn in pair:
@@ -247,8 +247,6 @@ def control_response(conn, message):
             response = server_message(kind, "server", "Group members", group["name"])
             response["members"] = member_names(group)
             return response
-        if key == DEFAULT_ROOM:
-            raise RequestError("invalid_group", "The public lobby cannot be left; select another chat instead")
         group["members"].remove(conn)
         if not group["members"]:
             del groups[key]
@@ -322,9 +320,9 @@ def resolve_chat(conn, message):
     if room is None and room_type is None:
         chat = active_chats.get(conn)
         if chat is None:
-            raise RequestError("chat_not_selected", "Choose /private, /create, /join, /group, or /lobby before sending")
+            raise RequestError("chat_not_selected", "Choose /private, /create, /join, or /group before sending")
         return chat
-    # Explicit group destinations remain compatible with the previous lobby protocol.
+    # A group destination must name a group the sender has joined.
     if room_type in (None, "group"):
         key, group = get_group(room)
         require_member(conn, group)

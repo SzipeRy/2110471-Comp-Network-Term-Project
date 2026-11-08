@@ -121,8 +121,7 @@ class ChatRoom(tk.Frame):
                       else f"{info.member_count} members")
             self.header.config(text=f"#{self.room_id}  ·  {detail}", fg=T.INK)
             if joined:
-                if self.room_id != "lobby":
-                    self.leave_btn.pack(side="right", padx=8)
+                self.leave_btn.pack(side="right", padx=8)
             else:
                 self.join_btn.pack(side="right", padx=8)
                 self.locked_lbl.config(text="You left this group. Join again to send messages."
