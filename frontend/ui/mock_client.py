@@ -31,8 +31,8 @@ class MockClient(ClientInterface):
 
     def _push_lists(self):
         self.on_users(list(self.users))
-        self.on_groups({g: GroupInfo(self.me in m, len(m), tuple(m) if self.me in m else None)
-                        for g, m in self.groups.items()})
+        # Like the real server (R9): member names of every group, joined or not.
+        self.on_groups({g: GroupInfo(self.me in m, len(m), tuple(m)) for g, m in self.groups.items()})
 
     def _msg(self, room_type, room_id, sender, text, reply_to=None):
         # Like the real server: mentions are the known names written as @name.

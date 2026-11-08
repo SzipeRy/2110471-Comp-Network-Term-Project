@@ -208,6 +208,10 @@ def selected_response(conn, chat, action="select_chat"):
     return response
 
 
+def member_names(group):
+    return sorted((usernames[s] for s in group["members"]), key=str.casefold)
+
+
 def control_response(conn, message):
     kind = message.get("type")
     if kind == "member_list":
@@ -216,8 +220,11 @@ def control_response(conn, message):
         return response
     if kind == "group_list":
         response = server_message(kind, "server", "Available groups")
+        # R9: every client sees all groups with their member lists, joined or not.
+        # Messages stay members-only (R11); only the names are shared.
         response["groups"] = [
-            {"name": g["name"], "joined": conn in g["members"], "member_count": len(g["members"])}
+            {"name": g["name"], "joined": conn in g["members"], "member_count": len(g["members"]),
+             "members": member_names(g)}
             for g in sorted(groups.values(), key=lambda item: item["name"].casefold())
         ]
         return response
@@ -238,7 +245,7 @@ def control_response(conn, message):
         require_member(conn, group)
         if kind == "group_members":
             response = server_message(kind, "server", "Group members", group["name"])
-            response["members"] = sorted((usernames[s] for s in group["members"]), key=str.casefold)
+            response["members"] = member_names(group)
             return response
         if key == DEFAULT_ROOM:
             raise RequestError("invalid_group", "The public lobby cannot be left; select another chat instead")

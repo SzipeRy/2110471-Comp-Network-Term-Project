@@ -148,7 +148,7 @@ class NetworkClientTests(ServerTestCase):
         with self.assertRaises(queue.Empty):
             a.queues["message"].get(timeout=0.1)  # no duplicate optimistic echo
 
-    def test_group_discovery_hides_names_until_join_and_refreshes_after_leave(self):
+    def test_group_discovery_shows_members_but_not_messages_and_refreshes_after_leave(self):
         alice, a, _ = self.adapter("Alice")
         bob, b, _ = self.adapter("Bob")
         alice.create_group("Study Team")
@@ -156,7 +156,7 @@ class NetworkClientTests(ServerTestCase):
         groups = b.wait("groups", lambda g: "Study Team" in g)
         self.assertFalse(groups["Study Team"].joined)
         self.assertEqual(groups["Study Team"].member_count, 1)
-        self.assertIsNone(groups["Study Team"].members)
+        self.assertEqual(groups["Study Team"].members, ("Alice",))  # R9: member list before joining
         bob.send_message("group", "Study Team", "Forbidden")
         b.wait("error", lambda e: "not_group_member" in e)
         bob.join_group("Study Team")
@@ -166,7 +166,8 @@ class NetworkClientTests(ServerTestCase):
         original = a.wait("message")
         self.assertEqual(original, b.wait("message"))
         bob.leave_group("Study Team")
-        b.wait("groups", lambda g: "Study Team" in g and not g["Study Team"].joined)
+        b.wait("groups", lambda g: "Study Team" in g and not g["Study Team"].joined
+               and g["Study Team"].members == ("Alice",))  # still listed, without Bob
         alice.send_message("group", "Study Team", "After leave")
         a.wait("message", lambda m: m["text"] == "After leave")
         with self.assertRaises(queue.Empty):

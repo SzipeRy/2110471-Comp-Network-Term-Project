@@ -102,7 +102,7 @@ Test names refer to [terminal/server tests](tests/test_chat.py),
 | LAN-01 | Multiple clients register and see canonical usernames | Passed locally | `test_online_list_updates_after_connect_and_abrupt_close`; Unicode private-chat test |
 | LAN-02 | Duplicate and overlength usernames are rejected; retry works | Passed locally | Registration retry tests; GUI invalid-username/port and duplicate-name tests |
 | LAN-03 | Private delivery reaches both participants once and excludes outsiders | Passed locally | `test_unicode_private_messages_replies_and_own_echo_exclude_outsider`; GUI own-echo test |
-| LAN-04 | Group discovery exposes counts while hiding outsider member names/messages | Passed locally | `test_group_discovery_hides_names_until_join_and_refreshes_after_leave`; GUI group privacy test |
+| LAN-04 | Group discovery shows every group's member list (R9) while hiding messages from outsiders (R11) | Passed locally | `test_group_discovery_shows_members_but_not_messages_and_refreshes_after_leave`; GUI group privacy test |
 | LAN-05 | Join enables sending; leave stops reception and locks the input | Passed locally | Adapter group test; GUI join/leave test and picker-close-on-leave regression |
 | LAN-06 | Switching private/group tabs sends only to each tab's destination | Passed locally | `test_switching_private_and_group_tabs_keeps_destinations_separate` |
 | LAN-07 | Reply selection, cancellation, sending, references, and quote rendering | Passed locally | `test_reply_menu_cancel_then_send_and_quote`; native context-menu/cancel check |

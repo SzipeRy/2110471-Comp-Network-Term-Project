@@ -158,7 +158,8 @@ class BroadcastChatTests(unittest.TestCase):
         self.assert_quiet(carol)
         listing = self.request(carol, {"type": "group_list"}, "group_list")
         study = next(g for g in listing["groups"] if g["name"] == "Study")
-        self.assertEqual(study, {"name": "Study", "joined": False, "member_count": 2})
+        self.assertEqual(study, {"name": "Study", "joined": False, "member_count": 2,
+                                 "members": ["Alice", "Bob"]})  # R9: names, but never messages
         self.request(carol, {"type": "join_group", "room": "Study"}, "chat_selected")
         members = self.request(carol, {"type": "group_members", "room": "Study"}, "group_members")
         self.assertEqual(members["members"], ["Alice", "Bob", "Carol"])

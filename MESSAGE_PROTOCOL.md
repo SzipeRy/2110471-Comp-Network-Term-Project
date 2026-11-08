@@ -128,7 +128,7 @@ Only Alice and Bob receive:
 
 ## Group and selection requests
 
-All requests below require registration. Group names are NFC-normalized, trimmed, contain 1-40 printable code points, and are unique case-insensitively. The creator automatically becomes a member. Groups are open to registered users who explicitly join; no invitation or approval is required. A nonmember receives no messages or member names for the group.
+All requests below require registration. Group names are NFC-normalized, trimmed, contain 1-40 printable code points, and are unique case-insensitively. The creator automatically becomes a member. Groups are open to registered users who explicitly join; no invitation or approval is required. A nonmember receives no messages for the group, but can see its member list (R9).
 
 ```json
 {"type": "create_group", "room": "Study"}
@@ -161,10 +161,10 @@ Leaving requires membership and returns `group_left` only to the requester. The 
 The `group_list` response contains a `groups` array, for example:
 
 ```json
-[{"name": "Study", "joined": true, "member_count": 2}, {"name": "lobby", "joined": true, "member_count": 3}]
+[{"name": "Study", "joined": false, "member_count": 2, "members": ["Alice", "Bob"]}, {"name": "lobby", "joined": true, "member_count": 3, "members": ["Alice", "Bob", "Carol"]}]
 ```
 
-Group names and counts are discoverable so users can join existing groups. Member names and message contents are not exposed by this list.
+Every client sees every group with its member list (R9), so users can choose which groups to join. Message contents are never exposed by this list; only members receive group messages (R11).
 
 ```json
 {"type": "group_members", "room": "Study"}
@@ -318,7 +318,7 @@ username, never that local key or the server's opaque session ID. Server reply
 validation continues to use the live conversation context.
 
 The UI receives `GroupInfo(joined, member_count, members)` values. `members` is
-`None` when names are unavailable, including groups the user has not joined.
+`None` only when names are unavailable (an older server); `group_list` gives the names of every group, joined or not.
 The adapter polls `member_list` and `group_list` every two seconds, then requests
 `group_members` only for joined groups. Successful create/join/leave responses
 also update the local membership display. Opted-in clients additionally receive

@@ -43,7 +43,7 @@ class GroupsDialog(tk.Toplevel):
             info.pack(side="left", fill="x", expand=True)
             tk.Label(info, text=f"#{g}", font=T.F_BOLD, fg=T.INK, bg=T.CARD, anchor="w").pack(fill="x")
             detail = ("members: " + ", ".join(group.members) if group.members is not None
-                      else f"{group.member_count} members · join to view names")
+                      else f"{group.member_count} members")
             tk.Label(info, text=detail, font=T.F_SMALL, fg=T.MUTE,
                      bg=T.CARD, anchor="w", justify="left", wraplength=250).pack(fill="x")
             if joined:
