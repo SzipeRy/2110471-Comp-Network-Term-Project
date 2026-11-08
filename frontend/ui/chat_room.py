@@ -31,6 +31,7 @@ class ChatRoom(tk.Frame):
         self.messages = {}      # message_id -> msg (for reply quotes)
         self.system_messages = {}  # server event IDs, separate from replyable chat
         self.reply_to = None
+        self.unconfirmed = None  # text given back after an error; cleared if its echo still arrives
         self.typing_row = None
         self.emoji_picker = None
 
@@ -60,8 +61,10 @@ class ChatRoom(tk.Frame):
         self.input_row = tk.Frame(self.bottom, bg=T.CARD)
         self.input_row.pack(fill="x")
         self.entry = T.entry(self.input_row)
+        self.entry.config(readonlybackground=T.BG)  # read-only while the server answers a send
         self.entry.pack(side="left", fill="x", expand=True, ipady=5)
         self.entry.bind("<Return>", self._on_return)
+        self.entry.bind("<Key>", lambda _e: setattr(self, "unconfirmed", None), add="+")  # user edited
         self.emoji_btn = T.button(self.input_row, "😀", self.open_emoji)
         self.emoji_btn.pack(side="left", padx=4)
         self.send_btn = T.button(self.input_row, "Send", self.send, primary=True)
@@ -135,15 +138,42 @@ class ChatRoom(tk.Frame):
     # ---------- sending ----------
     def send(self):
         text = self.entry.get().strip()
-        if not text or self.entry.cget("state") == "disabled":
+        if not text or self.entry.cget("state") != "normal":
             return
+        if self.app.pending_send is not None:
+            return  # one message waits for the server at a time; keep this draft
         if self.room_type == "bot" and self.typing_row:
             return  # the server takes one chatbot question at a time; keep the draft
         if self.app.client.send_message(self.room_type, self.room_id, text, self.reply_to) is False:
             return
-        self.entry.delete(0, "end")
-        self.clear_reply()
+        # Server errors do not say which request failed, so the text stays in the box, read-only,
+        # until the server answers: its echo clears it, an error makes it editable again.
+        self.app.pending_send = self
+        self.unconfirmed = None
+        self.entry.config(state="readonly")
         self.hide_suggestions()
+
+    def send_finished(self, delivered):
+        """The server answered this room's pending message."""
+        state = self.entry.cget("state")
+        if delivered:
+            self.entry.config(state="normal")
+            self.entry.delete(0, "end")
+            self.clear_reply()
+            self.entry.config(state="disabled" if state == "disabled" else "normal")
+        else:
+            if state == "readonly":
+                self.entry.config(state="normal")
+            # An unrelated error may have arrived first: remember the text in case its echo follows.
+            self.unconfirmed = self.entry.get().strip()
+
+    def _confirm_late_echo(self, msg):
+        """Our message was delivered after all; clear it only if the box still holds it unedited."""
+        if (self.unconfirmed and msg["text"] == self.unconfirmed
+                and self.entry.get().strip() == self.unconfirmed and self.entry.cget("state") == "normal"):
+            self.entry.delete(0, "end")
+            self.clear_reply()
+        self.unconfirmed = None
 
     def _on_return(self, _e=None):
         if self.suggested:
@@ -229,6 +259,11 @@ class ChatRoom(tk.Frame):
         T.bind_tree(bubble, "<Button-3>", lambda e, m=msg["message_id"]: self._menu(e, m))
         T.bind_tree(bubble, "<Button-2>", lambda e, m=msg["message_id"]: self._menu(e, m))  # macOS
         if mine:
+            if self.app.pending_send is self:
+                self.app.pending_send = None
+                self.send_finished(delivered=True)
+            else:
+                self._confirm_late_echo(msg)
             self._note_outside_mentions(names)
             if self.room_type == "bot":
                 self._show_typing()  # after the server echo, so it sits below the question

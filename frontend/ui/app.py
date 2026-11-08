@@ -24,6 +24,7 @@ class App(tk.Tk):
         self.username, self.users, self.groups = None, [], {}
         self.main = None
         self.pending_messages = []
+        self.pending_send = None  # the ChatRoom whose sent message awaits its echo or an error
         self.closing = False
         self.q = queue.Queue()  # network threads -> UI thread (Tkinter is not thread-safe)
         client.set_handlers(
@@ -64,12 +65,18 @@ class App(tk.Tk):
                 elif kind == "groups":
                     self.groups = data
                 if kind == "error":
+                    # Errors carry no request ID: any error ends the wait for the pending message,
+                    # which stays in its chat box (now editable) instead of being lost.
+                    room, self.pending_send = self.pending_send, None
+                    if room is not None and room.winfo_exists():
+                        room.send_finished(delivered=False)
                     messagebox.showerror("Error", data)
                 elif kind == "bye":
                     if self.main:
                         self.main.destroy()
                         self.main = None
                     self.username, self.users, self.groups = None, [], {}
+                    self.pending_send = None
                     self.pending_messages.clear()
                     self.title("Chat – Login")
                     self.login.pack(expand=True)
